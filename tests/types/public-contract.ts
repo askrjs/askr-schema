@@ -1,4 +1,9 @@
-import { schema, type InferSchema, type ObjectSchema, type SafeParseResult } from "../../dist/index.js";
+import {
+  schema,
+  type InferSchema,
+  type ObjectSchema,
+  type SafeParseResult,
+} from "../../dist/index.js";
 
 const User = schema.object({
   id: schema.uuid(),
@@ -20,10 +25,16 @@ void scalarContract;
 const missing: User = {};
 void missing;
 
-schema.raw<number>({ type: "integer" }, (value): SafeParseResult<number> =>
-  Number.isInteger(value)
-    ? { success: true, data: value as number }
-    : { success: false, issues: [{ path: [], code: "invalid_type", message: "Expected integer." }] });
+schema.raw<number>(
+  { type: "integer" },
+  (value): SafeParseResult<number> =>
+    Number.isInteger(value)
+      ? { success: true, data: value as number }
+      : {
+          success: false,
+          issues: [{ path: [], code: "invalid_type", message: "Expected integer." }],
+        },
+);
 
 // @ts-expect-error raw schemas require executable validation
 schema.raw({ type: "string" });

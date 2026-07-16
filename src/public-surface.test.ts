@@ -15,6 +15,8 @@ describe("public surface", () => {
       readFileSync(resolve(root, "README.md"), "utf8"),
       readFileSync(resolve(root, "docs/schema.md"), "utf8"),
     ].join("\n");
-    expect(source).not.toMatch(/\b(?:defineContext|readContext|[A-Z][A-Za-z]+Provider|use[A-Z][A-Za-z]+)\b/);
+    expect(source).not.toMatch(
+      /\b(?:defineContext|readContext|[A-Z][A-Za-z]+Provider|use[A-Z][A-Za-z]+)\b/,
+    );
   });
 });

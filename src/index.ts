@@ -11,7 +11,7 @@ export type SafeParseResult<T> =
   | { readonly success: false; readonly issues: readonly Issue[] };
 
 export interface Schema<T = unknown> {
-  readonly openapi: JsonSchema;
+  readonly jsonSchema: JsonSchema;
   readonly __type?: T;
   safeParse(value: unknown): SafeParseResult<T>;
 }
@@ -38,14 +38,7 @@ type CommonOptions = {
   readOnly?: boolean;
   writeOnly?: boolean;
 };
-export type StringFormat =
-  | "uuid"
-  | "email"
-  | "uri"
-  | "date"
-  | "date-time"
-  | "byte"
-  | "binary";
+export type StringFormat = "uuid" | "email" | "uri" | "date" | "date-time" | "byte" | "binary";
 type StringOptions = CommonOptions & {
   minLength?: number;
   maxLength?: number;
@@ -77,8 +70,11 @@ type ObjectValue<T extends Record<string, Schema>> = {
 } & {
   [K in OptionalKeys<T>]?: Exclude<InferSchema<T[K]>, undefined>;
 };
-type UnionToIntersection<T> = (T extends unknown ? (value: T) => void : never) extends
-  ((value: infer Value) => void) ? Value : never;
+type UnionToIntersection<T> = (T extends unknown ? (value: T) => void : never) extends (
+  value: infer Value,
+) => void
+  ? Value
+  : never;
 
 const optionalSchemas = new WeakSet<object>();
 
@@ -105,21 +101,24 @@ function ok<T>(data: T): SafeParseResult<T> {
 }
 
 function make<T>(
-  openapi: Record<string, unknown>,
+  jsonSchema: Record<string, unknown>,
   parse: (value: unknown, path: readonly (string | number)[]) => SafeParseResult<T>,
 ): Schema<T> {
   const result = {
-    openapi: immutableProjection(openapi) as JsonSchema,
+    jsonSchema: immutableProjection({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      ...jsonSchema,
+    }) as JsonSchema,
     safeParse: (value: unknown) => parse(value, []),
   } satisfies Schema<T>;
   return Object.freeze(result);
 }
 
 function makeObject<T extends Record<string, unknown>>(
-  openapi: Record<string, unknown>,
+  jsonSchema: Record<string, unknown>,
   parse: (value: unknown, path: readonly (string | number)[]) => SafeParseResult<T>,
 ): ObjectSchema<T> {
-  const value = make(openapi, parse);
+  const value = make(jsonSchema, parse);
   return Object.freeze({ ...value, kind: "object" as const });
 }
 
@@ -141,23 +140,34 @@ function stringFormat(format: string | undefined, value: string): boolean {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) return false;
     const date = new Date(`${value}T00:00:00.000Z`);
-    return date.getUTCFullYear() === Number(match[1])
-      && date.getUTCMonth() + 1 === Number(match[2])
-      && date.getUTCDate() === Number(match[3]);
+    return (
+      date.getUTCFullYear() === Number(match[1]) &&
+      date.getUTCMonth() + 1 === Number(match[2]) &&
+      date.getUTCDate() === Number(match[3])
+    );
   }
   if (format === "date-time") {
     return /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value));
   }
-  if (format === "byte") return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
+  if (format === "byte")
+    return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
   return true;
 }
 
 function string(options: StringOptions = {}): Schema<string> {
   const supportedFormats = new Set<StringFormat>([
-    "uuid", "email", "uri", "date", "date-time", "byte", "binary",
+    "uuid",
+    "email",
+    "uri",
+    "date",
+    "date-time",
+    "byte",
+    "binary",
   ]);
   if (options.format !== undefined && !supportedFormats.has(options.format)) {
-    throw new Error(`Unsupported string format: ${String(options.format)}. Use schema.raw() for custom formats.`);
+    throw new Error(
+      `Unsupported string format: ${String(options.format)}. Use schema.raw() for custom formats.`,
+    );
   }
   const expression = options.pattern === undefined ? undefined : new RegExp(options.pattern);
   return make({ type: "string", ...options }, (value, path) => {
@@ -180,7 +190,11 @@ function string(options: StringOptions = {}): Schema<string> {
 
 function numeric(type: "number" | "integer", options: NumberOptions = {}): Schema<number> {
   return make({ type, ...options }, (value, path) => {
-    if (typeof value !== "number" || !Number.isFinite(value) || (type === "integer" && !Number.isInteger(value))) {
+    if (
+      typeof value !== "number" ||
+      !Number.isFinite(value) ||
+      (type === "integer" && !Number.isInteger(value))
+    ) {
       return bad([issue(path, "invalid_type", `Expected ${type}.`)]);
     }
     if (options.minimum !== undefined && value < options.minimum) {
@@ -197,7 +211,10 @@ function numeric(type: "number" | "integer", options: NumberOptions = {}): Schem
     }
     if (options.multipleOf !== undefined) {
       const quotient = value / options.multipleOf;
-      if (!Number.isFinite(quotient) || Math.abs(quotient - Math.round(quotient)) > Number.EPSILON * 16) {
+      if (
+        !Number.isFinite(quotient) ||
+        Math.abs(quotient - Math.round(quotient)) > Number.EPSILON * 16
+      ) {
         return bad([issue(path, "not_multiple", `Expected a multiple of ${options.multipleOf}.`)]);
       }
     }
@@ -222,64 +239,80 @@ function object<T extends Record<string, Schema>>(
 ): ObjectSchema<ObjectValue<T>> {
   const required = Object.keys(properties).filter((key) => !optionalSchemas.has(properties[key]!));
   const schemaProperties = Object.fromEntries(
-    Object.entries(properties).map(([key, value]) => [key, value.openapi]),
+    Object.entries(properties).map(([key, value]) => [key, value.jsonSchema]),
   );
   const { additionalProperties: additional, ...rest } = options;
-  return makeObject({
-    type: "object",
-    ...rest,
-    properties: schemaProperties,
-    ...(required.length ? { required } : {}),
-    additionalProperties: additional === undefined
-      ? false
-      : typeof additional === "boolean"
-        ? additional
-        : additional.openapi,
-  }, (value, path) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return bad([issue(path, "invalid_type", "Expected object.")]);
-    }
-    const input = value as Record<string, unknown>;
-    const keys = Object.keys(input);
-    const output: Record<string, unknown> = {};
-    const issues: Issue[] = [];
-    if (options.minProperties !== undefined && keys.length < options.minProperties) {
-      issues.push(issue(path, "too_small", `Expected at least ${options.minProperties} properties.`));
-    }
-    if (options.maxProperties !== undefined && keys.length > options.maxProperties) {
-      issues.push(issue(path, "too_big", `Expected at most ${options.maxProperties} properties.`));
-    }
-    for (const [key, child] of Object.entries(properties)) {
-      if (!(key in input)) {
-        if (!optionalSchemas.has(child)) issues.push(issue([...path, key], "required", "Required."));
-        continue;
+  return makeObject(
+    {
+      type: "object",
+      ...rest,
+      properties: schemaProperties,
+      ...(required.length ? { required } : {}),
+      additionalProperties:
+        additional === undefined
+          ? false
+          : typeof additional === "boolean"
+            ? additional
+            : additional.jsonSchema,
+    },
+    (value, path) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return bad([issue(path, "invalid_type", "Expected object.")]);
       }
-      const result = child.safeParse(input[key]);
-      if (result.success) {
-        if (result.data !== undefined) output[key] = result.data;
-      } else {
-        issues.push(...result.issues.map((entry) =>
-          issue([...path, key, ...entry.path], entry.code, entry.message)));
+      const input = value as Record<string, unknown>;
+      const keys = Object.keys(input);
+      const output: Record<string, unknown> = {};
+      const issues: Issue[] = [];
+      if (options.minProperties !== undefined && keys.length < options.minProperties) {
+        issues.push(
+          issue(path, "too_small", `Expected at least ${options.minProperties} properties.`),
+        );
       }
-    }
-    for (const key of keys) {
-      if (key in properties) continue;
-      if (additional === true) output[key] = input[key];
-      else if (additional && typeof additional !== "boolean") {
-        const result = additional.safeParse(input[key]);
-        if (result.success) output[key] = result.data;
-        else issues.push(...result.issues.map((entry) =>
-          issue([...path, key, ...entry.path], entry.code, entry.message)));
-      } else {
-        issues.push(issue([...path, key], "unrecognized_key", "Unknown key."));
+      if (options.maxProperties !== undefined && keys.length > options.maxProperties) {
+        issues.push(
+          issue(path, "too_big", `Expected at most ${options.maxProperties} properties.`),
+        );
       }
-    }
-    return issues.length ? bad(issues) : ok(output as ObjectValue<T>);
-  });
+      for (const [key, child] of Object.entries(properties)) {
+        if (!(key in input)) {
+          if (!optionalSchemas.has(child))
+            issues.push(issue([...path, key], "required", "Required."));
+          continue;
+        }
+        const result = child.safeParse(input[key]);
+        if (result.success) {
+          if (result.data !== undefined) output[key] = result.data;
+        } else {
+          issues.push(
+            ...result.issues.map((entry) =>
+              issue([...path, key, ...entry.path], entry.code, entry.message),
+            ),
+          );
+        }
+      }
+      for (const key of keys) {
+        if (key in properties) continue;
+        if (additional === true) output[key] = input[key];
+        else if (additional && typeof additional !== "boolean") {
+          const result = additional.safeParse(input[key]);
+          if (result.success) output[key] = result.data;
+          else
+            issues.push(
+              ...result.issues.map((entry) =>
+                issue([...path, key, ...entry.path], entry.code, entry.message),
+              ),
+            );
+        } else {
+          issues.push(issue([...path, key], "unrecognized_key", "Unknown key."));
+        }
+      }
+      return issues.length ? bad(issues) : ok(output as ObjectValue<T>);
+    },
+  );
 }
 
 function array<T>(items: Schema<T>, options: ArrayOptions = {}): Schema<T[]> {
-  return make({ type: "array", ...options, items: items.openapi }, (value, path) => {
+  return make({ type: "array", ...options, items: items.jsonSchema }, (value, path) => {
     if (!Array.isArray(value)) return bad([issue(path, "invalid_type", "Expected array.")]);
     const output: T[] = [];
     const issues: Issue[] = [];
@@ -295,8 +328,12 @@ function array<T>(items: Schema<T>, options: ArrayOptions = {}): Schema<T[]> {
     value.forEach((entry, index) => {
       const result = items.safeParse(entry);
       if (result.success) output.push(result.data);
-      else issues.push(...result.issues.map((item) =>
-        issue([...path, index, ...item.path], item.code, item.message)));
+      else
+        issues.push(
+          ...result.issues.map((item) =>
+            issue([...path, index, ...item.path], item.code, item.message),
+          ),
+        );
     });
     return issues.length ? bad(issues) : ok(output);
   });
@@ -313,108 +350,141 @@ export const schema = Object.freeze({
   binary: (options: StringOptions = {}) => string({ ...options, format: "binary" }),
   number: (options: NumberOptions = {}) => numeric("number", options),
   integer: (options: NumberOptions = {}) => numeric("integer", options),
-  boolean: (options: CommonOptions = {}) => make<boolean>({ type: "boolean", ...options },
-    (value, path) => typeof value === "boolean"
-      ? ok(value)
-      : bad([issue(path, "invalid_type", "Expected boolean.")])),
-  null: (options: CommonOptions = {}) => make<null>({ type: "null", ...options },
-    (value, path) => value === null
-      ? ok(null)
-      : bad([issue(path, "invalid_type", "Expected null.")])),
+  boolean: (options: CommonOptions = {}) =>
+    make<boolean>({ type: "boolean", ...options }, (value, path) =>
+      typeof value === "boolean"
+        ? ok(value)
+        : bad([issue(path, "invalid_type", "Expected boolean.")]),
+    ),
+  null: (options: CommonOptions = {}) =>
+    make<null>({ type: "null", ...options }, (value, path) =>
+      value === null ? ok(null) : bad([issue(path, "invalid_type", "Expected null.")]),
+    ),
   object,
   array,
   record: <T>(values: Schema<T>, options: CommonOptions = {}) =>
-    makeObject<Record<string, T>>({ type: "object", ...options, additionalProperties: values.openapi }, (value, path) => {
-      if (!value || typeof value !== "object" || Array.isArray(value)) {
-        return bad([issue(path, "invalid_type", "Expected object.")]);
-      }
-      const output: Record<string, T> = {};
-      const issues: Issue[] = [];
-      for (const [key, entry] of Object.entries(value)) {
-        const result = values.safeParse(entry);
-        if (result.success) output[key] = result.data;
-        else issues.push(...result.issues.map((item) =>
-          issue([...path, key, ...item.path], item.code, item.message)));
-      }
-      return issues.length ? bad(issues) : ok(output);
-    }),
-  enum: <const T extends readonly (string | number | boolean)[]>(values: T, options: CommonOptions = {}) =>
+    makeObject<Record<string, T>>(
+      { type: "object", ...options, additionalProperties: values.jsonSchema },
+      (value, path) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          return bad([issue(path, "invalid_type", "Expected object.")]);
+        }
+        const output: Record<string, T> = {};
+        const issues: Issue[] = [];
+        for (const [key, entry] of Object.entries(value)) {
+          const result = values.safeParse(entry);
+          if (result.success) output[key] = result.data;
+          else
+            issues.push(
+              ...result.issues.map((item) =>
+                issue([...path, key, ...item.path], item.code, item.message),
+              ),
+            );
+        }
+        return issues.length ? bad(issues) : ok(output);
+      },
+    ),
+  enum: <const T extends readonly (string | number | boolean)[]>(
+    values: T,
+    options: CommonOptions = {},
+  ) =>
     make<T[number]>({ ...options, enum: [...values] }, (value, path) =>
       values.includes(value as T[number])
         ? ok(value as T[number])
-        : bad([issue(path, "invalid_enum", "Invalid enum value.")])),
-  literal: <const T extends string | number | boolean | null>(value: T, options: CommonOptions = {}) =>
+        : bad([issue(path, "invalid_enum", "Invalid enum value.")]),
+    ),
+  literal: <const T extends string | number | boolean | null>(
+    value: T,
+    options: CommonOptions = {},
+  ) =>
     make<T>({ ...options, const: value }, (input, path) =>
-      input === value
-        ? ok(value)
-        : bad([issue(path, "invalid_literal", "Invalid literal value.")])),
+      input === value ? ok(value) : bad([issue(path, "invalid_literal", "Invalid literal value.")]),
+    ),
   optional: <T>(value: Schema<T>): OptionalSchema<T> => {
     const result = Object.freeze({
-      openapi: value.openapi,
+      jsonSchema: value.jsonSchema,
       __optional: true as const,
-      safeParse: (input: unknown) => input === undefined ? ok(undefined) : value.safeParse(input),
+      safeParse: (input: unknown) => (input === undefined ? ok(undefined) : value.safeParse(input)),
     });
     optionalSchemas.add(result);
     return result;
   },
-  nullable: <T>(value: Schema<T>) => make<T | null>(
-    { anyOf: [value.openapi, { type: "null" }] },
-    (input) => input === null ? ok(null) : value.safeParse(input),
-  ),
-  oneOf: <const T extends readonly Schema[]>(...values: T) => make<InferSchema<T[number]>>(
-    { oneOf: values.map((value) => value.openapi) },
-    (input, path) => {
-      const matches = values.map((value) => value.safeParse(input)).filter((result) => result.success);
-      return matches.length === 1
-        ? ok(matches[0]!.data as InferSchema<T[number]>)
-        : bad([issue(path, "invalid_union", matches.length === 0
-          ? "No union member matched."
-          : "Expected exactly one union member to match.")]);
-    },
-  ),
-  anyOf: <const T extends readonly Schema[]>(...values: T) => make<InferSchema<T[number]>>(
-    { anyOf: values.map((value) => value.openapi) },
-    (input, path) => {
-      for (const value of values) {
-        const result = value.safeParse(input);
-        if (result.success) return ok(result.data as InferSchema<T[number]>);
-      }
-      return bad([issue(path, "invalid_union", "No union member matched.")]);
-    },
-  ),
-  allOf: <const T extends readonly Schema[]>(...values: T) => make<UnionToIntersection<InferSchema<T[number]>>>(
-    { allOf: values.map((value) => value.openapi) },
-    (input) => {
-      let output: unknown = input;
-      const issues: Issue[] = [];
-      const unknownCounts = new Map<string, { issue: Issue; count: number }>();
-      for (const value of values) {
-        const result = value.safeParse(input);
-        if (!result.success) {
-          for (const entry of result.issues) {
-            if (entry.code !== "unrecognized_key") {
-              issues.push(entry);
-              continue;
-            }
-            const key = JSON.stringify(entry.path);
-            const previous = unknownCounts.get(key);
-            unknownCounts.set(key, { issue: entry, count: (previous?.count ?? 0) + 1 });
-          }
-          continue;
+  nullable: <T>(value: Schema<T>) =>
+    make<T | null>({ anyOf: [value.jsonSchema, { type: "null" }] }, (input) =>
+      input === null ? ok(null) : value.safeParse(input),
+    ),
+  oneOf: <const T extends readonly Schema[]>(...values: T) =>
+    make<InferSchema<T[number]>>(
+      { oneOf: values.map((value) => value.jsonSchema) },
+      (input, path) => {
+        const matches = values
+          .map((value) => value.safeParse(input))
+          .filter((result) => result.success);
+        return matches.length === 1
+          ? ok(matches[0]!.data as InferSchema<T[number]>)
+          : bad([
+              issue(
+                path,
+                "invalid_union",
+                matches.length === 0
+                  ? "No union member matched."
+                  : "Expected exactly one union member to match.",
+              ),
+            ]);
+      },
+    ),
+  anyOf: <const T extends readonly Schema[]>(...values: T) =>
+    make<InferSchema<T[number]>>(
+      { anyOf: values.map((value) => value.jsonSchema) },
+      (input, path) => {
+        for (const value of values) {
+          const result = value.safeParse(input);
+          if (result.success) return ok(result.data as InferSchema<T[number]>);
         }
-        output = typeof output === "object" && output && typeof result.data === "object" && result.data
-          ? { ...(output as object), ...(result.data as object) }
-          : result.data;
-      }
-      for (const entry of unknownCounts.values()) {
-        if (entry.count === values.length) issues.push(entry.issue);
-      }
-      if (issues.length) return bad(issues);
-      return ok(output as UnionToIntersection<InferSchema<T[number]>>);
-    },
-  ),
+        return bad([issue(path, "invalid_union", "No union member matched.")]);
+      },
+    ),
+  allOf: <const T extends readonly Schema[]>(...values: T) =>
+    make<UnionToIntersection<InferSchema<T[number]>>>(
+      { allOf: values.map((value) => value.jsonSchema) },
+      (input) => {
+        let output: unknown = input;
+        const issues: Issue[] = [];
+        const unknownCounts = new Map<string, { issue: Issue; count: number }>();
+        for (const value of values) {
+          const result = value.safeParse(input);
+          if (!result.success) {
+            for (const entry of result.issues) {
+              if (entry.code !== "unrecognized_key") {
+                issues.push(entry);
+                continue;
+              }
+              const key = JSON.stringify(entry.path);
+              const previous = unknownCounts.get(key);
+              unknownCounts.set(key, { issue: entry, count: (previous?.count ?? 0) + 1 });
+            }
+            continue;
+          }
+          output =
+            typeof output === "object" && output && typeof result.data === "object" && result.data
+              ? { ...(output as object), ...(result.data as object) }
+              : result.data;
+        }
+        for (const entry of unknownCounts.values()) {
+          if (entry.count === values.length) issues.push(entry.issue);
+        }
+        if (issues.length) return bad(issues);
+        return ok(output as UnionToIntersection<InferSchema<T[number]>>);
+      },
+    ),
   raw: <T>(
-    openapi: JsonSchema,
+    jsonSchema: JsonSchema,
     safeParse: (value: unknown) => SafeParseResult<T>,
-  ): Schema<T> => make(openapi as Record<string, unknown>, (value) => safeParse(value)),
+  ): Schema<T> => {
+    const dialect = jsonSchema.$schema;
+    if (dialect !== undefined && dialect !== "https://json-schema.org/draft/2020-12/schema") {
+      throw new Error(`Unsupported JSON Schema dialect: ${String(dialect)}.`);
+    }
+    return make(jsonSchema as Record<string, unknown>, (value) => safeParse(value));
+  },
 });

@@ -15,30 +15,40 @@ describe("schema", () => {
   });
 
   it("returns stable, path-addressable validation issues", () => {
-    const value = schema.object({ profile: schema.object({ name: schema.string({ minLength: 2 }) }) });
+    const value = schema.object({
+      profile: schema.object({ name: schema.string({ minLength: 2 }) }),
+    });
     expect(value.safeParse({ profile: { name: "x" } })).toEqual({
       success: false,
-      issues: [{ path: ["profile", "name"], code: "too_small", message: "Expected at least 2 characters." }],
+      issues: [
+        {
+          path: ["profile", "name"],
+          code: "too_small",
+          message: "Expected at least 2 characters.",
+        },
+      ],
     });
   });
 
-  it("keeps deterministic OpenAPI projections deeply immutable", () => {
+  it("keeps deterministic JSON Schema 2020-12 projections deeply immutable", () => {
     const examples = [{ z: 1, a: ["one"] }];
     const value = schema.object({
       name: schema.string({ examples }),
       tags: schema.array(schema.string()),
     });
 
-    expect(Object.keys(value.openapi)).toEqual([
+    expect(Object.keys(value.jsonSchema)).toEqual([
+      "$schema",
       "additionalProperties",
       "properties",
       "required",
       "type",
     ]);
-    expect(Object.isFrozen(value.openapi)).toBe(true);
-    expect(Object.isFrozen(value.openapi.properties)).toBe(true);
+    expect(Object.isFrozen(value.jsonSchema)).toBe(true);
+    expect(Object.isFrozen(value.jsonSchema.properties)).toBe(true);
     examples[0]!.a.push("two");
-    expect(value.openapi).toMatchObject({
+    expect(value.jsonSchema).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
       properties: { name: { examples: [{ a: ["one"], z: 1 }] } },
     });
   });
@@ -61,9 +71,12 @@ describe("schema", () => {
   });
 
   it("validates optional and schema-backed additional properties", () => {
-    const value = schema.object({ name: schema.string(), age: schema.optional(schema.integer()) }, {
-      additionalProperties: schema.boolean(),
-    });
+    const value = schema.object(
+      { name: schema.string(), age: schema.optional(schema.integer()) },
+      {
+        additionalProperties: schema.boolean(),
+      },
+    );
     type Value = InferSchema<typeof value>;
     const typed: Value = { name: "Ada" };
     expect(typed).toEqual({ name: "Ada" });
@@ -81,9 +94,22 @@ describe("schema", () => {
     const value = schema.raw<number>({ type: "integer" }, (input) =>
       Number.isInteger(input)
         ? { success: true, data: input as number }
-        : { success: false, issues: [{ path: [], code: "invalid_type", message: "Expected integer." }] });
+        : {
+            success: false,
+            issues: [{ path: [], code: "invalid_type", message: "Expected integer." }],
+          },
+    );
     expect(value.safeParse(1)).toEqual({ success: true, data: 1 });
     expect(value.safeParse("1")).toMatchObject({ success: false });
+  });
+
+  it("rejects raw schemas declaring another dialect", () => {
+    expect(() =>
+      schema.raw({ $schema: "http://json-schema.org/draft-07/schema#" }, (input) => ({
+        success: true,
+        data: input,
+      })),
+    ).toThrow("Unsupported JSON Schema dialect");
   });
 
   it("executes strict object intersections as one composed contract", () => {
