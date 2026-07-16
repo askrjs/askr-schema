@@ -21,6 +21,11 @@ Validation failures contain stable path arrays, codes, and messages. Objects
 reject undeclared keys by default; opt into additional keys with
 `additionalProperties: true` or validate them with another schema.
 
+`schema.object()` and `schema.record()` return `ObjectSchema`, the transport-safe
+schema subtype used by action inputs, route search, and server operation inputs.
+String formats are limited to the formats the runtime implements. Use
+`schema.raw()` when an integration intentionally owns a custom format.
+
 `schema.raw(openapi, safeParse)` is the explicit extension seam. It requires an
 executable parser so a documentation-only declaration cannot masquerade as a
 runtime schema. Named component references are created by `@askrjs/server`

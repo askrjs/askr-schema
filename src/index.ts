@@ -16,6 +16,13 @@ export interface Schema<T = unknown> {
   safeParse(value: unknown): SafeParseResult<T>;
 }
 
+/** An executable schema whose successful value is always a plain object. */
+export interface ObjectSchema<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> extends Schema<T> {
+  readonly kind: "object";
+}
+
 export interface OptionalSchema<T> extends Schema<T | undefined> {
   readonly __optional: true;
 }
@@ -31,11 +38,19 @@ type CommonOptions = {
   readOnly?: boolean;
   writeOnly?: boolean;
 };
+export type StringFormat =
+  | "uuid"
+  | "email"
+  | "uri"
+  | "date"
+  | "date-time"
+  | "byte"
+  | "binary";
 type StringOptions = CommonOptions & {
   minLength?: number;
   maxLength?: number;
   pattern?: string;
-  format?: string;
+  format?: StringFormat;
 };
 type NumberOptions = CommonOptions & {
   minimum?: number;
@@ -100,6 +115,14 @@ function make<T>(
   return Object.freeze(result);
 }
 
+function makeObject<T extends Record<string, unknown>>(
+  openapi: Record<string, unknown>,
+  parse: (value: unknown, path: readonly (string | number)[]) => SafeParseResult<T>,
+): ObjectSchema<T> {
+  const value = make(openapi, parse);
+  return Object.freeze({ ...value, kind: "object" as const });
+}
+
 function stringFormat(format: string | undefined, value: string): boolean {
   if (!format || format === "binary") return true;
   if (format === "uuid") {
@@ -130,6 +153,12 @@ function stringFormat(format: string | undefined, value: string): boolean {
 }
 
 function string(options: StringOptions = {}): Schema<string> {
+  const supportedFormats = new Set<StringFormat>([
+    "uuid", "email", "uri", "date", "date-time", "byte", "binary",
+  ]);
+  if (options.format !== undefined && !supportedFormats.has(options.format)) {
+    throw new Error(`Unsupported string format: ${String(options.format)}. Use schema.raw() for custom formats.`);
+  }
   const expression = options.pattern === undefined ? undefined : new RegExp(options.pattern);
   return make({ type: "string", ...options }, (value, path) => {
     if (typeof value !== "string") return bad([issue(path, "invalid_type", "Expected string.")]);
@@ -190,13 +219,13 @@ function stableValue(value: unknown): string {
 function object<T extends Record<string, Schema>>(
   properties: T,
   options: ObjectOptions = {},
-): Schema<ObjectValue<T>> {
+): ObjectSchema<ObjectValue<T>> {
   const required = Object.keys(properties).filter((key) => !optionalSchemas.has(properties[key]!));
   const schemaProperties = Object.fromEntries(
     Object.entries(properties).map(([key, value]) => [key, value.openapi]),
   );
   const { additionalProperties: additional, ...rest } = options;
-  return make({
+  return makeObject({
     type: "object",
     ...rest,
     properties: schemaProperties,
@@ -295,7 +324,7 @@ export const schema = Object.freeze({
   object,
   array,
   record: <T>(values: Schema<T>, options: CommonOptions = {}) =>
-    make<Record<string, T>>({ type: "object", ...options, additionalProperties: values.openapi }, (value, path) => {
+    makeObject<Record<string, T>>({ type: "object", ...options, additionalProperties: values.openapi }, (value, path) => {
       if (!value || typeof value !== "object" || Array.isArray(value)) {
         return bad([issue(path, "invalid_type", "Expected object.")]);
       }

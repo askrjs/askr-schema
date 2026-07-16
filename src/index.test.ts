@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { schema, type InferSchema } from "./index";
 
 describe("schema", () => {
+  it("rejects unsupported string formats at construction", () => {
+    expect(() => schema.string({ format: "hostname" as "uuid" })).toThrow(
+      "Unsupported string format: hostname. Use schema.raw() for custom formats.",
+    );
+  });
+
+  it("marks object and record schemas as transport-safe object schemas", () => {
+    expect(schema.object({ value: schema.string() }).kind).toBe("object");
+    expect(schema.record(schema.string()).kind).toBe("object");
+    expect("kind" in schema.string()).toBe(false);
+  });
+
   it("returns stable, path-addressable validation issues", () => {
     const value = schema.object({ profile: schema.object({ name: schema.string({ minLength: 2 }) }) });
     expect(value.safeParse({ profile: { name: "x" } })).toEqual({
