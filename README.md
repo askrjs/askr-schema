@@ -1,5 +1,8 @@
 # @askrjs/schema
 
+[![CI](https://github.com/askrjs/askr-schema/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/askrjs/askr-schema/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/%40askrjs%2Fschema.svg)](https://www.npmjs.com/package/@askrjs/schema)
+
 Executable, TypeScript-first schemas with deterministic OpenAPI 3.1 projection.
 The same declaration validates runtime input through `safeParse()` and exposes
 its deeply immutable documentation shape through `openapi`.
