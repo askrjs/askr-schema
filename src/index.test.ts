@@ -14,6 +14,38 @@ describe("schema", () => {
     expect("kind" in schema.string()).toBe(false);
   });
 
+  it("does not accept inherited required properties or mutate output prototypes", () => {
+    const inherited = Object.create({ name: "smuggled" }) as Record<string, unknown>;
+    expect(schema.object({ name: schema.string() }).safeParse(inherited)).toMatchObject({
+      success: false,
+      issues: [{ code: "required", path: ["name"] }],
+    });
+
+    const input = JSON.parse('{"__proto__":{"polluted":true},"safe":"value"}') as unknown;
+    const result = schema
+      .object({}, { additionalProperties: true })
+      .safeParse(input);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const parsed = result.data as Record<string, unknown>;
+    expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype);
+    expect(Object.prototype.hasOwnProperty.call(parsed, "__proto__")).toBe(true);
+    expect(parsed.__proto__).toEqual({ polluted: true });
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
+  });
+
+  it("defines record keys as own data properties", () => {
+    const result = schema
+      .record(schema.string())
+      .safeParse(JSON.parse('{"__proto__":"safe","constructor":"also-safe"}'));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const parsed = result.data;
+    expect(Object.getPrototypeOf(parsed)).toBe(Object.prototype);
+    expect(Object.getOwnPropertyDescriptor(parsed, "__proto__")?.value).toBe("safe");
+    expect(Object.getOwnPropertyDescriptor(parsed, "constructor")?.value).toBe("also-safe");
+  });
+
   it("returns stable, path-addressable validation issues", () => {
     const value = schema.object({
       profile: schema.object({ name: schema.string({ minLength: 2 }) }),
