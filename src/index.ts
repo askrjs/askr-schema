@@ -263,6 +263,16 @@ function object<T extends Record<string, Schema>>(
       const keys = Object.keys(input);
       const output: Record<string, unknown> = {};
       const issues: Issue[] = [];
+      const hasOwn = (target: object, key: PropertyKey): boolean =>
+        Object.prototype.hasOwnProperty.call(target, key);
+      const defineOutput = (key: string, entry: unknown): void => {
+        Object.defineProperty(output, key, {
+          configurable: true,
+          enumerable: true,
+          value: entry,
+          writable: true,
+        });
+      };
       if (options.minProperties !== undefined && keys.length < options.minProperties) {
         issues.push(
           issue(path, "too_small", `Expected at least ${options.minProperties} properties.`),
@@ -274,14 +284,14 @@ function object<T extends Record<string, Schema>>(
         );
       }
       for (const [key, child] of Object.entries(properties)) {
-        if (!(key in input)) {
+        if (!hasOwn(input, key)) {
           if (!optionalSchemas.has(child))
             issues.push(issue([...path, key], "required", "Required."));
           continue;
         }
         const result = child.safeParse(input[key]);
         if (result.success) {
-          if (result.data !== undefined) output[key] = result.data;
+          if (result.data !== undefined) defineOutput(key, result.data);
         } else {
           issues.push(
             ...result.issues.map((entry) =>
@@ -291,11 +301,11 @@ function object<T extends Record<string, Schema>>(
         }
       }
       for (const key of keys) {
-        if (key in properties) continue;
-        if (additional === true) output[key] = input[key];
+        if (hasOwn(properties, key)) continue;
+        if (additional === true) defineOutput(key, input[key]);
         else if (additional && typeof additional !== "boolean") {
           const result = additional.safeParse(input[key]);
-          if (result.success) output[key] = result.data;
+          if (result.success) defineOutput(key, result.data);
           else
             issues.push(
               ...result.issues.map((entry) =>
@@ -373,7 +383,14 @@ export const schema = Object.freeze({
         const issues: Issue[] = [];
         for (const [key, entry] of Object.entries(value)) {
           const result = values.safeParse(entry);
-          if (result.success) output[key] = result.data;
+          if (result.success) {
+            Object.defineProperty(output, key, {
+              configurable: true,
+              enumerable: true,
+              value: result.data,
+              writable: true,
+            });
+          }
           else
             issues.push(
               ...result.issues.map((item) =>
