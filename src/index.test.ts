@@ -102,6 +102,43 @@ describe("schema", () => {
     });
   });
 
+  it("bounds uniqueItems canonicalization and rejects active-path cycles", () => {
+    const anyValue = schema.raw<unknown>({}, (input) => ({ success: true, data: input }));
+    const uniqueValues = schema.array(anyValue, { uniqueItems: true });
+    const cyclic: unknown[] = [];
+    cyclic.push(cyclic);
+
+    expect(() => uniqueValues.safeParse([cyclic])).not.toThrow();
+    expect(uniqueValues.safeParse([cyclic])).toEqual({
+      success: false,
+      issues: [
+        {
+          path: [],
+          code: "invalid_value",
+          message: "Expected unique items with acyclic values no deeper than 100 levels.",
+        },
+      ],
+    });
+
+    let deeplyNested: Record<string, unknown> = {};
+    for (let depth = 0; depth < 102; depth += 1) deeplyNested = { child: deeplyNested };
+    expect(uniqueValues.safeParse([deeplyNested])).toMatchObject({
+      success: false,
+      issues: [{ code: "invalid_value" }],
+    });
+  });
+
+  it("allows shared references that do not form an active-path cycle", () => {
+    const anyValue = schema.raw<unknown>({}, (input) => ({ success: true, data: input }));
+    const shared = { value: "same" };
+    expect(
+      schema.array(anyValue, { uniqueItems: true }).safeParse([
+        { left: shared },
+        { right: shared },
+      ]),
+    ).toMatchObject({ success: true });
+  });
+
   it("validates optional and schema-backed additional properties", () => {
     const value = schema.object(
       { name: schema.string(), age: schema.optional(schema.integer()) },
