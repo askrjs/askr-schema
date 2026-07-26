@@ -222,15 +222,34 @@ function numeric(type: "number" | "integer", options: NumberOptions = {}): Schem
   });
 }
 
-function stableValue(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableValue).join(",")}]`;
-  if (value && typeof value === "object") {
+const maxCanonicalizationDepth = 100;
+
+class CanonicalizationBoundaryError extends Error {}
+
+function stableValue(
+  value: unknown,
+  activePath: Set<object> = new Set(),
+  depth = 0,
+): string {
+  if (!value || typeof value !== "object") return `${typeof value}:${String(value)}`;
+  if (depth > maxCanonicalizationDepth)
+    throw new CanonicalizationBoundaryError("Canonicalization depth exceeded.");
+  if (activePath.has(value)) throw new CanonicalizationBoundaryError("Cyclic value.");
+  activePath.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => stableValue(item, activePath, depth + 1)).join(",")}]`;
+    }
     return `{${Object.entries(value as Record<string, unknown>)
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableValue(item)}`)
+      .map(
+        ([key, item]) =>
+          `${JSON.stringify(key)}:${stableValue(item, activePath, depth + 1)}`,
+      )
       .join(",")}}`;
+  } finally {
+    activePath.delete(value);
   }
-  return `${typeof value}:${String(value)}`;
 }
 
 function object<T extends Record<string, Schema>>(
@@ -332,8 +351,21 @@ function array<T>(items: Schema<T>, options: ArrayOptions = {}): Schema<T[]> {
     if (options.maxItems !== undefined && value.length > options.maxItems) {
       issues.push(issue(path, "too_big", `Expected at most ${options.maxItems} items.`));
     }
-    if (options.uniqueItems && new Set(value.map(stableValue)).size !== value.length) {
-      issues.push(issue(path, "not_unique", "Expected unique items."));
+    if (options.uniqueItems) {
+      try {
+        if (new Set(value.map((item) => stableValue(item))).size !== value.length) {
+          issues.push(issue(path, "not_unique", "Expected unique items."));
+        }
+      } catch (error) {
+        if (!(error instanceof CanonicalizationBoundaryError)) throw error;
+        issues.push(
+          issue(
+            path,
+            "invalid_value",
+            `Expected unique items with acyclic values no deeper than ${maxCanonicalizationDepth} levels.`,
+          ),
+        );
+      }
     }
     value.forEach((entry, index) => {
       const result = items.safeParse(entry);
