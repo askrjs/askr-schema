@@ -100,7 +100,7 @@ describe("schema", () => {
     });
   });
 
-  it("should bound uniqueItems canonicalization and rejects active-path cycles", () => {
+  it("should bound uniqueItems canonicalization and reject active-path cycles", () => {
     const anyValue = schema.raw<unknown>({}, (input) => ({ success: true, data: input }));
     const uniqueValues = schema.array(anyValue, { uniqueItems: true });
     const cyclic: unknown[] = [];
