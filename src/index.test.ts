@@ -2,19 +2,19 @@ import { describe, expect, it } from "vitest";
 import { schema, type InferSchema } from "./index";
 
 describe("schema", () => {
-  it("rejects unsupported string formats at construction", () => {
+  it("should reject unsupported string formats at construction", () => {
     expect(() => schema.string({ format: "hostname" as "uuid" })).toThrow(
       "Unsupported string format: hostname. Use schema.raw() for custom formats.",
     );
   });
 
-  it("marks object and record schemas as transport-safe object schemas", () => {
+  it("should mark object and record schemas as transport-safe object schemas", () => {
     expect(schema.object({ value: schema.string() }).kind).toBe("object");
     expect(schema.record(schema.string()).kind).toBe("object");
     expect("kind" in schema.string()).toBe(false);
   });
 
-  it("does not accept inherited required properties or mutate output prototypes", () => {
+  it("should not accept inherited required properties or mutate output prototypes", () => {
     const inherited = Object.create({ name: "smuggled" }) as Record<string, unknown>;
     expect(schema.object({ name: schema.string() }).safeParse(inherited)).toMatchObject({
       success: false,
@@ -22,9 +22,7 @@ describe("schema", () => {
     });
 
     const input = JSON.parse('{"__proto__":{"polluted":true},"safe":"value"}') as unknown;
-    const result = schema
-      .object({}, { additionalProperties: true })
-      .safeParse(input);
+    const result = schema.object({}, { additionalProperties: true }).safeParse(input);
     expect(result.success).toBe(true);
     if (!result.success) return;
     const parsed = result.data as Record<string, unknown>;
@@ -34,7 +32,7 @@ describe("schema", () => {
     expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
   });
 
-  it("defines record keys as own data properties", () => {
+  it("should define record keys as own data properties", () => {
     const result = schema
       .record(schema.string())
       .safeParse(JSON.parse('{"__proto__":"safe","constructor":"also-safe"}'));
@@ -46,7 +44,7 @@ describe("schema", () => {
     expect(Object.getOwnPropertyDescriptor(parsed, "constructor")?.value).toBe("also-safe");
   });
 
-  it("returns stable, path-addressable validation issues", () => {
+  it("should return stable, path-addressable validation issues", () => {
     const value = schema.object({
       profile: schema.object({ name: schema.string({ minLength: 2 }) }),
     });
@@ -62,7 +60,7 @@ describe("schema", () => {
     });
   });
 
-  it("keeps deterministic JSON Schema 2020-12 projections deeply immutable", () => {
+  it("should keep deterministic JSON Schema 2020-12 projections deeply immutable", () => {
     const examples = [{ z: 1, a: ["one"] }];
     const value = schema.object({
       name: schema.string({ examples }),
@@ -85,7 +83,7 @@ describe("schema", () => {
     });
   });
 
-  it("executes documented string number array and object constraints", () => {
+  it("should execute documented string number array and object constraints", () => {
     const value = schema.object({
       id: schema.uuid(),
       score: schema.number({ exclusiveMinimum: 0, multipleOf: 0.5 }),
@@ -102,7 +100,7 @@ describe("schema", () => {
     });
   });
 
-  it("bounds uniqueItems canonicalization and rejects active-path cycles", () => {
+  it("should bound uniqueItems canonicalization and rejects active-path cycles", () => {
     const anyValue = schema.raw<unknown>({}, (input) => ({ success: true, data: input }));
     const uniqueValues = schema.array(anyValue, { uniqueItems: true });
     const cyclic: unknown[] = [];
@@ -128,18 +126,17 @@ describe("schema", () => {
     });
   });
 
-  it("allows shared references that do not form an active-path cycle", () => {
+  it("should allow shared references that do not form an active-path cycle", () => {
     const anyValue = schema.raw<unknown>({}, (input) => ({ success: true, data: input }));
     const shared = { value: "same" };
     expect(
-      schema.array(anyValue, { uniqueItems: true }).safeParse([
-        { left: shared },
-        { right: shared },
-      ]),
+      schema
+        .array(anyValue, { uniqueItems: true })
+        .safeParse([{ left: shared }, { right: shared }]),
     ).toMatchObject({ success: true });
   });
 
-  it("validates optional and schema-backed additional properties", () => {
+  it("should validate optional and schema-backed additional properties", () => {
     const value = schema.object(
       { name: schema.string(), age: schema.optional(schema.integer()) },
       {
@@ -159,7 +156,7 @@ describe("schema", () => {
     });
   });
 
-  it("requires raw projections to remain executable", () => {
+  it("should require raw projections to remain executable", () => {
     const value = schema.raw<number>({ type: "integer" }, (input) =>
       Number.isInteger(input)
         ? { success: true, data: input as number }
@@ -172,7 +169,7 @@ describe("schema", () => {
     expect(value.safeParse("1")).toMatchObject({ success: false });
   });
 
-  it("rejects raw schemas declaring another dialect", () => {
+  it("should reject raw schemas declaring another dialect", () => {
     expect(() =>
       schema.raw({ $schema: "http://json-schema.org/draft-07/schema#" }, (input) => ({
         success: true,
@@ -181,7 +178,7 @@ describe("schema", () => {
     ).toThrow("Unsupported JSON Schema dialect");
   });
 
-  it("executes strict object intersections as one composed contract", () => {
+  it("should execute strict object intersections as one composed contract", () => {
     const value = schema.allOf(
       schema.object({ id: schema.string() }),
       schema.object({ active: schema.boolean() }),

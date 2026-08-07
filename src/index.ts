@@ -226,11 +226,7 @@ const maxCanonicalizationDepth = 100;
 
 class CanonicalizationBoundaryError extends Error {}
 
-function stableValue(
-  value: unknown,
-  activePath: Set<object> = new Set(),
-  depth = 0,
-): string {
+function stableValue(value: unknown, activePath: Set<object> = new Set(), depth = 0): string {
   if (!value || typeof value !== "object") return `${typeof value}:${String(value)}`;
   if (depth > maxCanonicalizationDepth)
     throw new CanonicalizationBoundaryError("Canonicalization depth exceeded.");
@@ -242,10 +238,7 @@ function stableValue(
     }
     return `{${Object.entries(value as Record<string, unknown>)
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(
-        ([key, item]) =>
-          `${JSON.stringify(key)}:${stableValue(item, activePath, depth + 1)}`,
-      )
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableValue(item, activePath, depth + 1)}`)
       .join(",")}}`;
   } finally {
     activePath.delete(value);
@@ -422,8 +415,7 @@ export const schema = Object.freeze({
               value: result.data,
               writable: true,
             });
-          }
-          else
+          } else
             issues.push(
               ...result.issues.map((item) =>
                 issue([...path, key, ...item.path], item.code, item.message),
