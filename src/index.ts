@@ -278,11 +278,21 @@ function stableValue(value: unknown, activePath: Set<object> = new Set(), depth 
   }
 }
 
+function canonicalProjectionArray<T>(values: readonly T[]): T[] {
+  return [...values].sort((left, right) => {
+    const leftKey = JSON.stringify(left);
+    const rightKey = JSON.stringify(right);
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+  });
+}
+
 function object<T extends Record<string, Schema>>(
   properties: T,
   options: ObjectOptions = {},
 ): ObjectSchema<ObjectValue<T>> {
-  const required = Object.keys(properties).filter((key) => !optionalSchemas.has(properties[key]!));
+  const required = Object.keys(properties)
+    .filter((key) => !optionalSchemas.has(properties[key]!))
+    .sort();
   const schemaProperties = Object.fromEntries(
     Object.entries(properties).map(([key, value]) => [key, value.jsonSchema]),
   );
@@ -487,7 +497,7 @@ export const schema = Object.freeze({
     values: T,
     options: CommonOptions = {},
   ) =>
-    make<T[number]>({ ...options, enum: [...values] }, (value, path) =>
+    make<T[number]>({ ...options, enum: canonicalProjectionArray(values) }, (value, path) =>
       values.includes(value as T[number])
         ? ok(value as T[number])
         : bad([issue(path, "invalid_enum", "Invalid enum value.")]),
@@ -518,7 +528,7 @@ export const schema = Object.freeze({
   /** Creates a schema that requires exactly one of `values` to match (JSON Schema `oneOf`). */
   oneOf: <const T extends readonly Schema[]>(...values: T) =>
     make<InferSchema<T[number]>>(
-      { oneOf: values.map((value) => value.jsonSchema) },
+      { oneOf: canonicalProjectionArray(values.map((value) => value.jsonSchema)) },
       (input, path) => {
         const matches = values
           .map((value) => value.safeParse(input))
@@ -539,7 +549,7 @@ export const schema = Object.freeze({
   /** Creates a schema that accepts a value matched by any of `values` (JSON Schema `anyOf`). */
   anyOf: <const T extends readonly Schema[]>(...values: T) =>
     make<InferSchema<T[number]>>(
-      { anyOf: values.map((value) => value.jsonSchema) },
+      { anyOf: canonicalProjectionArray(values.map((value) => value.jsonSchema)) },
       (input, path) => {
         for (const value of values) {
           const result = value.safeParse(input);
@@ -555,7 +565,7 @@ export const schema = Object.freeze({
    */
   allOf: <const T extends readonly Schema[]>(...values: T) =>
     make<UnionToIntersection<InferSchema<T[number]>>>(
-      { allOf: values.map((value) => value.jsonSchema) },
+      { allOf: canonicalProjectionArray(values.map((value) => value.jsonSchema)) },
       (input) => {
         let output: unknown = input;
         const issues: Issue[] = [];
