@@ -23,3 +23,12 @@ array size and uniqueness; and object size and additional-property schemas.
 `schema.raw(projection, safeParse)` supports specialized formats while keeping
 the executable-schema invariant. The callback must return a `SafeParseResult`.
 There is intentionally no projection-only reference declaration.
+
+Recursive declarations are not supported by the eager `object()`, `array()`,
+record, wrapper, or combinator builders. An incomplete child schema throws a
+purpose-built error with this guidance instead of an internal property-access
+error. Use `schema.raw(projection, safeParse)` when manual recursive validation
+is required. `raw()` does not discover recursion or synthesize `$ref` entries:
+its `jsonSchema` is exactly the explicit projection supplied by the caller, so
+a flat placeholder projection remains flat and does not describe the recursive
+runtime structure.
