@@ -8,6 +8,67 @@ describe("schema", () => {
     );
   });
 
+  it("should count Unicode code points at string length boundaries", () => {
+    const exactlyTwo = schema.string({ minLength: 2, maxLength: 2 });
+
+    expect(exactlyTwo.safeParse("ab")).toMatchObject({ success: true });
+    expect(exactlyTwo.safeParse("a")).toMatchObject({
+      success: false,
+      issues: [{ code: "too_small" }],
+    });
+    expect(exactlyTwo.safeParse("abc")).toMatchObject({
+      success: false,
+      issues: [{ code: "too_big" }],
+    });
+    expect(exactlyTwo.safeParse("a😀")).toMatchObject({ success: true });
+    expect(exactlyTwo.safeParse("😀")).toMatchObject({
+      success: false,
+      issues: [{ code: "too_small" }],
+    });
+    expect(schema.string({ maxLength: 1 }).safeParse("😀")).toMatchObject({ success: true });
+    expect(exactlyTwo.safeParse("e\u0301")).toMatchObject({ success: true });
+    expect(exactlyTwo.jsonSchema).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      minLength: 2,
+      maxLength: 2,
+    });
+  });
+
+  it("should enforce RFC 3339 calendar, time, and offset boundaries for date-time", () => {
+    const dateTime = schema.dateTime();
+    const valid = [
+      "2024-02-29T23:59:59Z",
+      "2025-01-01t00:00:00z",
+      "2025-01-01T00:00:00.123456789Z",
+      "2025-01-01T12:30:45+14:00",
+      "2025-01-01T12:30:45-05:30",
+    ];
+    const invalid = [
+      "2025-02-29T00:00:00Z",
+      "2025-02-30T00:00:00Z",
+      "2025-01-01T00:00:00",
+      "2025-01-01T24:00:00Z",
+      "2025-01-01T00:60:00Z",
+      "2025-01-01T00:00:61Z",
+      "2025-01-01T00:00:00+24:00",
+      "2025-01-01T00:00:00+01:60",
+      "2025-01-01T00:00:00Z trailing",
+    ];
+
+    for (const value of valid) expect(dateTime.safeParse(value)).toMatchObject({ success: true });
+    for (const value of invalid) {
+      expect(dateTime.safeParse(value)).toMatchObject({
+        success: false,
+        issues: [{ code: "invalid_string", message: "Expected date-time." }],
+      });
+    }
+    expect(dateTime.jsonSchema).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "string",
+      format: "date-time",
+    });
+  });
+
   it("should mark object and record schemas as transport-safe object schemas", () => {
     expect(schema.object({ value: schema.string() }).kind).toBe("object");
     expect(schema.record(schema.string()).kind).toBe("object");
