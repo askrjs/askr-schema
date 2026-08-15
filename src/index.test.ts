@@ -1,12 +1,37 @@
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
-import { schema, type InferSchema } from "./index";
+import { schema, type InferSchema, type Schema } from "./index";
 
 describe("schema", () => {
   it("should reject unsupported string formats at construction", () => {
     expect(() => schema.string({ format: "hostname" as "uuid" })).toThrow(
       "Unsupported string format: hostname. Use schema.raw() for custom formats.",
     );
+  });
+
+  it("should reject incomplete child schemas with stable recursion guidance", () => {
+    const incomplete = undefined as unknown as Schema;
+    const malformed = {} as Schema;
+    const suffix =
+      "Recursive schemas are not supported by eager builders. Use schema.raw() for manual recursive validation and supply an explicit JSON Schema projection.";
+    const cases: readonly [string, () => unknown][] = [
+      ["schema.object(properties.child)", () => schema.object({ child: incomplete })],
+      [
+        "schema.object(options.additionalProperties)",
+        () => schema.object({}, { additionalProperties: malformed }),
+      ],
+      ["schema.array(items)", () => schema.array(incomplete)],
+      ["schema.record(values)", () => schema.record(incomplete)],
+      ["schema.optional(value)", () => schema.optional(incomplete)],
+      ["schema.nullable(value)", () => schema.nullable(incomplete)],
+      ["schema.oneOf(values[0])", () => schema.oneOf(incomplete)],
+      ["schema.anyOf(values[0])", () => schema.anyOf(incomplete)],
+      ["schema.allOf(values[0])", () => schema.allOf(incomplete)],
+    ];
+
+    for (const [location, build] of cases) {
+      expect(build, location).toThrow(`Invalid child schema at ${location}. ${suffix}`);
+    }
   });
 
   it("should count Unicode code points at string length boundaries", () => {
