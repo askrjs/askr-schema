@@ -605,7 +605,7 @@ export const schema = Object.freeze({
           const result = value.safeParse(input);
           if (!result.success) {
             for (const entry of result.issues) {
-              if (entry.code !== "unrecognized_key") {
+              if (entry.code !== "unrecognized_key" || entry.path.length !== 1) {
                 issues.push(entry);
                 continue;
               }

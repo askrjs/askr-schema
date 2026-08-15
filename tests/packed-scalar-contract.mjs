@@ -104,16 +104,32 @@ try {
     schema.object({ id: schema.string() }),
     schema.object({ active: schema.boolean() }),
   );
-  const validateIntersection = new Ajv2020({ strict: true }).compile(intersection.jsonSchema);
-  const intersectionInputs = [
-    { id: "one", active: true },
-    { id: "one" },
-    { id: "one", active: true, extra: "no" },
+  const nestedIntersection = schema.allOf(
+    schema.object({ profile: schema.object({ name: schema.string() }) }),
+    schema.object({ active: schema.boolean() }),
+  );
+  const intersectionContracts = [
+    [
+      intersection,
+      [
+        { id: "one", active: true },
+        { id: "one" },
+        { id: "one", active: true, extra: "no" },
+      ],
+    ],
+    [
+      nestedIntersection,
+      [
+        { profile: { name: "Ada" }, active: true },
+        { profile: { name: "Ada", extra: "no" }, active: true },
+      ],
+    ],
   ];
   assert(
-    intersectionInputs.every(
-      (input) => intersection.safeParse(input).success === validateIntersection(input),
-    ),
+    intersectionContracts.every(([value, inputs]) => {
+      const validate = new Ajv2020({ strict: true }).compile(value.jsonSchema);
+      return inputs.every((input) => value.safeParse(input).success === validate(input));
+    }),
     "packed allOf runtime and JSON Schema projection must agree",
   );
 } finally {
