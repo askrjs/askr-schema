@@ -15,6 +15,15 @@ void user;
 const objectContract: ObjectSchema<User> = User;
 void objectContract;
 
+const NullableOptional = schema.object({
+  value: schema.nullable(schema.optional(schema.string())),
+});
+type NullableOptional = InferSchema<typeof NullableOptional>;
+const omittedNullableOptional: NullableOptional = {};
+const presentNullableOptional: NullableOptional = { value: null };
+void omittedNullableOptional;
+void presentNullableOptional;
+
 // @ts-expect-error unsupported formats must use schema.raw()
 schema.string({ format: "hostname" });
 // @ts-expect-error scalar schemas are not object transport schemas

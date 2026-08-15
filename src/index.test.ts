@@ -1,3 +1,4 @@
+import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import { schema, type InferSchema } from "./index";
 
@@ -242,6 +243,27 @@ describe("schema", () => {
     });
   });
 
+  it("should preserve optionality through both optional and nullable wrap orders", () => {
+    const values = [
+      schema.object({ value: schema.optional(schema.nullable(schema.string())) }),
+      schema.object({ value: schema.nullable(schema.optional(schema.string())) }),
+    ];
+
+    for (const value of values) {
+      expect(value.jsonSchema).not.toHaveProperty("required");
+      expect(value.safeParse({})).toEqual({ success: true, data: {} });
+      expect(value.safeParse({ value: null })).toEqual({ success: true, data: { value: null } });
+      expect(value.safeParse({ value: "present" })).toEqual({
+        success: true,
+        data: { value: "present" },
+      });
+      expect(value.safeParse({ value: 1 })).toMatchObject({
+        success: false,
+        issues: [{ path: ["value"] }],
+      });
+    }
+  });
+
   it("should require raw projections to remain executable", () => {
     const value = schema.raw<number>({ type: "integer" }, (input) =>
       Number.isInteger(input)
@@ -277,5 +299,28 @@ describe("schema", () => {
       success: false,
       issues: [{ path: ["extra"], code: "unrecognized_key" }],
     });
+  });
+
+  it("should keep allOf runtime results aligned with its JSON Schema projection", () => {
+    const value = schema.allOf(
+      schema.object({ id: schema.string() }),
+      schema.object({ active: schema.boolean() }),
+    );
+    const validateProjection = new Ajv2020({ strict: true }).compile(value.jsonSchema);
+    const inputs = [
+      { id: "one", active: true },
+      { id: "one" },
+      { active: true },
+      { id: "one", active: "yes" },
+      { id: "one", active: true, extra: "no" },
+      null,
+      [],
+    ];
+
+    for (const input of inputs) {
+      expect(value.safeParse(input).success, JSON.stringify(input)).toBe(
+        validateProjection(input),
+      );
+    }
   });
 });
