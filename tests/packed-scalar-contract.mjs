@@ -132,6 +132,19 @@ try {
     }),
     "packed allOf runtime and JSON Schema projection must agree",
   );
+
+  const recursionGuidance =
+    "Invalid child schema at schema.array(items). Recursive schemas are not supported by eager builders. Use schema.raw() for manual recursive validation and supply an explicit JSON Schema projection.";
+  let incompleteChildError;
+  try {
+    schema.array(undefined);
+  } catch (error) {
+    incompleteChildError = error;
+  }
+  assert(
+    incompleteChildError instanceof Error && incompleteChildError.message === recursionGuidance,
+    "packed eager builders must retain stable recursion guidance",
+  );
 } finally {
   await fs.rm(consumer, { recursive: true, force: true });
   if (tarball) await fs.rm(tarball, { force: true });

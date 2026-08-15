@@ -290,6 +290,30 @@ function canonicalProjectionArray<T>(values: readonly T[]): T[] {
   });
 }
 
+const incompleteChildGuidance =
+  "Recursive schemas are not supported by eager builders. Use schema.raw() for manual recursive validation and supply an explicit JSON Schema projection.";
+
+function childSchema(value: unknown, location: string): Schema {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("jsonSchema" in value) ||
+    !value.jsonSchema ||
+    typeof value.jsonSchema !== "object" ||
+    !("safeParse" in value) ||
+    typeof value.safeParse !== "function"
+  ) {
+    throw new Error(`Invalid child schema at ${location}. ${incompleteChildGuidance}`);
+  }
+  return value as Schema;
+}
+
+function childSchemas<T extends readonly Schema[]>(values: T, builder: string): T {
+  return values.map((value, index) =>
+    childSchema(value, `schema.${builder}(values[${index}])`),
+  ) as unknown as T;
+}
+
 function allOfProjection(values: readonly Schema[]): Record<string, unknown> {
   let composesStrictObjects = false;
   const projections = values.map((value) => {
@@ -310,13 +334,21 @@ function object<T extends Record<string, Schema>>(
   properties: T,
   options: ObjectOptions = {},
 ): ObjectSchema<ObjectValue<T>> {
-  const required = Object.keys(properties)
-    .filter((key) => !optionalSchemas.has(properties[key]!))
+  const propertyEntries = Object.entries(properties).map(
+    ([key, value]) => [key, childSchema(value, `schema.object(properties.${key})`)] as const,
+  );
+  const required = propertyEntries
+    .filter(([, value]) => !optionalSchemas.has(value))
+    .map(([key]) => key)
     .sort();
   const schemaProperties = Object.fromEntries(
-    Object.entries(properties).map(([key, value]) => [key, value.jsonSchema]),
+    propertyEntries.map(([key, value]) => [key, value.jsonSchema]),
   );
-  const { additionalProperties: additional, ...rest } = options;
+  const { additionalProperties, ...rest } = options;
+  const additional =
+    additionalProperties === undefined || typeof additionalProperties === "boolean"
+      ? additionalProperties
+      : childSchema(additionalProperties, "schema.object(options.additionalProperties)");
   return makeObject(
     {
       type: "object",
@@ -358,7 +390,7 @@ function object<T extends Record<string, Schema>>(
           issue(path, "too_big", `Expected at most ${options.maxProperties} properties.`),
         );
       }
-      for (const [key, child] of Object.entries(properties)) {
+      for (const [key, child] of propertyEntries) {
         if (!hasOwn(input, key)) {
           if (!optionalSchemas.has(child))
             issues.push(issue([...path, key], "required", "Required."));
@@ -397,7 +429,8 @@ function object<T extends Record<string, Schema>>(
 }
 
 function array<T>(items: Schema<T>, options: ArrayOptions = {}): Schema<T[]> {
-  return make({ type: "array", ...options, items: items.jsonSchema }, (value, path) => {
+  const itemSchema = childSchema(items, "schema.array(items)") as Schema<T>;
+  return make({ type: "array", ...options, items: itemSchema.jsonSchema }, (value, path) => {
     if (!Array.isArray(value)) return bad([issue(path, "invalid_type", "Expected array.")]);
     const output: T[] = [];
     const issues: Issue[] = [];
@@ -424,7 +457,7 @@ function array<T>(items: Schema<T>, options: ArrayOptions = {}): Schema<T[]> {
       }
     }
     value.forEach((entry, index) => {
-      const result = items.safeParse(entry);
+      const result = itemSchema.safeParse(entry);
       if (result.success) output.push(result.data);
       else
         issues.push(
@@ -484,9 +517,10 @@ export const schema = Object.freeze({
   /** Creates a schema for arrays, with optional length and uniqueness constraints. */
   array,
   /** Creates a schema for objects whose values all conform to `values`, keyed by arbitrary strings. */
-  record: <T>(values: Schema<T>, options: CommonOptions = {}) =>
-    makeObject<Record<string, T>>(
-      { type: "object", ...options, additionalProperties: values.jsonSchema },
+  record: <T>(values: Schema<T>, options: CommonOptions = {}) => {
+    const valueSchema = childSchema(values, "schema.record(values)") as Schema<T>;
+    return makeObject<Record<string, T>>(
+      { type: "object", ...options, additionalProperties: valueSchema.jsonSchema },
       (value, path) => {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
           return bad([issue(path, "invalid_type", "Expected object.")]);
@@ -494,7 +528,7 @@ export const schema = Object.freeze({
         const output: Record<string, T> = {};
         const issues: Issue[] = [];
         for (const [key, entry] of Object.entries(value)) {
-          const result = values.safeParse(entry);
+          const result = valueSchema.safeParse(entry);
           if (result.success) {
             Object.defineProperty(output, key, {
               configurable: true,
@@ -511,7 +545,8 @@ export const schema = Object.freeze({
         }
         return issues.length ? bad(issues) : ok(output);
       },
-    ),
+    );
+  },
   /** Creates a schema that accepts only one of the given literal `values`. */
   enum: <const T extends readonly (string | number | boolean)[]>(
     values: T,
@@ -532,34 +567,37 @@ export const schema = Object.freeze({
     ),
   /** Wraps `value` so it also accepts `undefined`; used to mark object properties as optional. */
   optional: <T>(value: Schema<T>): OptionalSchema<T> => {
+    const child = childSchema(value, "schema.optional(value)") as Schema<T>;
     const result = Object.freeze({
-      jsonSchema: value.jsonSchema,
+      jsonSchema: child.jsonSchema,
       __optional: true as const,
-      safeParse: (input: unknown) => (input === undefined ? ok(undefined) : value.safeParse(input)),
+      safeParse: (input: unknown) => (input === undefined ? ok(undefined) : child.safeParse(input)),
     });
     optionalSchemas.add(result);
     return result;
   },
   /** Wraps `value` so it also accepts `null`, preserving nested optionality. */
   nullable: <T extends Schema>(value: T): NullableSchema<T> => {
+    const child = childSchema(value, "schema.nullable(value)") as T;
     const result = make<InferSchema<T> | null>(
-      { anyOf: [value.jsonSchema, { type: "null" }] },
+      { anyOf: [child.jsonSchema, { type: "null" }] },
       (input) =>
         input === null
           ? ok(null)
-          : (value.safeParse(input) as SafeParseResult<InferSchema<T>>),
+          : (child.safeParse(input) as SafeParseResult<InferSchema<T>>),
     );
-    if (!optionalSchemas.has(value)) return result as NullableSchema<T>;
+    if (!optionalSchemas.has(child)) return result as NullableSchema<T>;
     const optionalResult = Object.freeze({ ...result, __optional: true as const });
     optionalSchemas.add(optionalResult);
     return optionalResult as NullableSchema<T>;
   },
   /** Creates a schema that requires exactly one of `values` to match (JSON Schema `oneOf`). */
-  oneOf: <const T extends readonly Schema[]>(...values: T) =>
-    make<InferSchema<T[number]>>(
-      { oneOf: canonicalProjectionArray(values.map((value) => value.jsonSchema)) },
+  oneOf: <const T extends readonly Schema[]>(...values: T) => {
+    const children = childSchemas(values, "oneOf");
+    return make<InferSchema<T[number]>>(
+      { oneOf: canonicalProjectionArray(children.map((value) => value.jsonSchema)) },
       (input, path) => {
-        const matches = values
+        const matches = children
           .map((value) => value.safeParse(input))
           .filter((result) => result.success);
         return matches.length === 1
@@ -574,19 +612,22 @@ export const schema = Object.freeze({
               ),
             ]);
       },
-    ),
+    );
+  },
   /** Creates a schema that accepts a value matched by any of `values` (JSON Schema `anyOf`). */
-  anyOf: <const T extends readonly Schema[]>(...values: T) =>
-    make<InferSchema<T[number]>>(
-      { anyOf: canonicalProjectionArray(values.map((value) => value.jsonSchema)) },
+  anyOf: <const T extends readonly Schema[]>(...values: T) => {
+    const children = childSchemas(values, "anyOf");
+    return make<InferSchema<T[number]>>(
+      { anyOf: canonicalProjectionArray(children.map((value) => value.jsonSchema)) },
       (input, path) => {
-        for (const value of values) {
+        for (const value of children) {
           const result = value.safeParse(input);
           if (result.success) return ok(result.data as InferSchema<T[number]>);
         }
         return bad([issue(path, "invalid_union", "No union member matched.")]);
       },
-    ),
+    );
+  },
   /**
    * Creates a schema requiring a value to satisfy every schema in `values` (JSON Schema `allOf`),
    * merging their parsed object results. Strict object members compose their recognized keys;
@@ -594,14 +635,15 @@ export const schema = Object.freeze({
    * union of recognized keys. An `unrecognized_key` issue is only reported if every member schema
    * rejects that key.
    */
-  allOf: <const T extends readonly Schema[]>(...values: T) =>
-    make<UnionToIntersection<InferSchema<T[number]>>>(
-      allOfProjection(values),
+  allOf: <const T extends readonly Schema[]>(...values: T) => {
+    const children = childSchemas(values, "allOf");
+    return make<UnionToIntersection<InferSchema<T[number]>>>(
+      allOfProjection(children),
       (input) => {
         let output: unknown = input;
         const issues: Issue[] = [];
         const unknownCounts = new Map<string, { issue: Issue; count: number }>();
-        for (const value of values) {
+        for (const value of children) {
           const result = value.safeParse(input);
           if (!result.success) {
             for (const entry of result.issues) {
@@ -621,15 +663,18 @@ export const schema = Object.freeze({
               : result.data;
         }
         for (const entry of unknownCounts.values()) {
-          if (entry.count === values.length) issues.push(entry.issue);
+          if (entry.count === children.length) issues.push(entry.issue);
         }
         if (issues.length) return bad(issues);
         return ok(output as UnionToIntersection<InferSchema<T[number]>>);
       },
-    ),
+    );
+  },
   /**
    * Creates a schema from a hand-written JSON Schema and parser, for cases the built-in
-   * builders don't cover. Only the draft 2020-12 dialect (or no `$schema`) is accepted.
+   * builders don't cover, including manually implemented recursion. This does not discover
+   * recursion or synthesize `$ref`; the caller owns the complete projection. Only the draft
+   * 2020-12 dialect (or no `$schema`) is accepted.
    */
   raw: <T>(
     jsonSchema: JsonSchema,
