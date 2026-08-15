@@ -61,6 +61,29 @@ try {
     "packed schema accepted a missing offset",
   );
   assert(dateTime.jsonSchema.format === "date-time", "packed date-time projection drifted");
+
+  const canonical = (value) => JSON.stringify(value.jsonSchema);
+  const memberA = () => schema.object({ a: schema.string() });
+  const memberB = () => schema.object({ b: schema.number() });
+  const deterministicPairs = [
+    [
+      schema.object({ b: schema.string(), a: schema.number() }),
+      schema.object({ a: schema.number(), b: schema.string() }),
+    ],
+    [schema.enum(["b", "a", "c"]), schema.enum(["c", "b", "a"])],
+    [schema.oneOf(memberA(), memberB()), schema.oneOf(memberB(), memberA())],
+    [schema.anyOf(memberA(), memberB()), schema.anyOf(memberB(), memberA())],
+    [schema.allOf(memberA(), memberB()), schema.allOf(memberB(), memberA())],
+  ];
+  assert(
+    deterministicPairs.every(([left, right]) => canonical(left) === canonical(right)),
+    "packed schema must canonicalize order-insensitive projection arrays",
+  );
+  assert(
+    JSON.stringify(schema.string({ examples: ["second", "first"] }).jsonSchema.examples) ===
+      '["second","first"]',
+    "packed schema must preserve semantically ordered examples",
+  );
 } finally {
   await fs.rm(consumer, { recursive: true, force: true });
   if (tarball) await fs.rm(tarball, { force: true });

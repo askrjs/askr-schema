@@ -144,6 +144,31 @@ describe("schema", () => {
     });
   });
 
+  it("should canonicalize every order-insensitive projection array without reordering examples", () => {
+    const objectPair = () =>
+      [
+        schema.array(schema.object({ b: schema.string(), a: schema.number() })),
+        schema.array(schema.object({ a: schema.number(), b: schema.string() })),
+      ] as const;
+    const memberA = () => schema.object({ a: schema.string() });
+    const memberB = () => schema.object({ b: schema.number() });
+    const pairs = [
+      ["required", ...objectPair()],
+      ["enum", schema.enum(["b", "a", "c"]), schema.enum(["c", "b", "a"])],
+      ["oneOf", schema.oneOf(memberA(), memberB()), schema.oneOf(memberB(), memberA())],
+      ["anyOf", schema.anyOf(memberA(), memberB()), schema.anyOf(memberB(), memberA())],
+      ["allOf", schema.allOf(memberA(), memberB()), schema.allOf(memberB(), memberA())],
+    ] as const;
+
+    for (const [label, left, right] of pairs) {
+      expect(JSON.stringify(left.jsonSchema), label).toBe(JSON.stringify(right.jsonSchema));
+    }
+    expect(schema.string({ examples: ["second", "first"] }).jsonSchema.examples).toEqual([
+      "second",
+      "first",
+    ]);
+  });
+
   it("should execute documented string number array and object constraints", () => {
     const value = schema.object({
       id: schema.uuid(),
