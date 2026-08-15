@@ -1,18 +1,28 @@
+/** A frozen, deterministic JSON Schema (draft 2020-12) object produced by a {@link Schema}. */
 export type JsonSchema = Readonly<Record<string, unknown>>;
 
+/** A single validation failure produced by {@link Schema.safeParse}. */
 export interface Issue {
+  /** Location of the offending value, as a sequence of object keys and/or array indices. */
   readonly path: readonly (string | number)[];
+  /** Human-readable description of the failure. */
   readonly message: string;
+  /** Stable machine-readable failure code, e.g. `"invalid_type"` or `"too_small"`. */
   readonly code: string;
 }
 
+/** The outcome of parsing a value: either the validated data, or the list of issues found. */
 export type SafeParseResult<T> =
   | { readonly success: true; readonly data: T }
   | { readonly success: false; readonly issues: readonly Issue[] };
 
+/** An executable schema: carries its JSON Schema projection and a runtime parser. */
 export interface Schema<T = unknown> {
+  /** The deterministic JSON Schema (draft 2020-12) projection of this schema. */
   readonly jsonSchema: JsonSchema;
+  /** Phantom type marker only; never set at runtime. */
   readonly __type?: T;
+  /** Validates `value`, returning either the parsed data or a list of issues. */
   safeParse(value: unknown): SafeParseResult<T>;
 }
 
@@ -23,10 +33,12 @@ export interface ObjectSchema<
   readonly kind: "object";
 }
 
+/** A {@link Schema} produced by {@link schema.optional} that permits `undefined` values. */
 export interface OptionalSchema<T> extends Schema<T | undefined> {
   readonly __optional: true;
 }
 
+/** Infers the parsed value type of a {@link Schema}. */
 export type InferSchema<T> = T extends Schema<infer Value> ? Value : never;
 
 type CommonOptions = {
@@ -38,6 +50,7 @@ type CommonOptions = {
   readOnly?: boolean;
   writeOnly?: boolean;
 };
+/** Supported `format` values for {@link schema.string} and its format-specific shorthands. */
 export type StringFormat = "uuid" | "email" | "uri" | "date" | "date-time" | "byte" | "binary";
 type StringOptions = CommonOptions & {
   minLength?: number;
@@ -374,29 +387,53 @@ function array<T>(items: Schema<T>, options: ArrayOptions = {}): Schema<T[]> {
   });
 }
 
+/**
+ * The public schema builder namespace: create executable schemas whose {@link Schema.safeParse}
+ * validates a value and whose `jsonSchema` field is a deterministic JSON Schema (draft 2020-12)
+ * projection suitable for OpenAPI documents.
+ *
+ * @example
+ * const user = schema.object({ id: schema.uuid(), name: schema.string({ minLength: 1 }) });
+ * const result = user.safeParse({ id: "...", name: "Ada" });
+ */
 export const schema = Object.freeze({
+  /** Creates a schema for strings, with optional length, pattern, and format constraints. */
   string,
+  /** Shorthand for `schema.string({ format: "uuid" })`. */
   uuid: (options: StringOptions = {}) => string({ ...options, format: "uuid" }),
+  /** Shorthand for `schema.string({ format: "email" })`. */
   email: (options: StringOptions = {}) => string({ ...options, format: "email" }),
+  /** Shorthand for `schema.string({ format: "uri" })`. */
   uri: (options: StringOptions = {}) => string({ ...options, format: "uri" }),
+  /** Shorthand for `schema.string({ format: "date" })`. */
   date: (options: StringOptions = {}) => string({ ...options, format: "date" }),
+  /** Shorthand for `schema.string({ format: "date-time" })`. */
   dateTime: (options: StringOptions = {}) => string({ ...options, format: "date-time" }),
+  /** Shorthand for `schema.string({ format: "byte" })` (base64-encoded string). */
   byte: (options: StringOptions = {}) => string({ ...options, format: "byte" }),
+  /** Shorthand for `schema.string({ format: "binary" })`. */
   binary: (options: StringOptions = {}) => string({ ...options, format: "binary" }),
+  /** Creates a schema for finite numbers, with optional range and multiple-of constraints. */
   number: (options: NumberOptions = {}) => numeric("number", options),
+  /** Creates a schema for finite integers, with optional range and multiple-of constraints. */
   integer: (options: NumberOptions = {}) => numeric("integer", options),
+  /** Creates a schema for boolean values. */
   boolean: (options: CommonOptions = {}) =>
     make<boolean>({ type: "boolean", ...options }, (value, path) =>
       typeof value === "boolean"
         ? ok(value)
         : bad([issue(path, "invalid_type", "Expected boolean.")]),
     ),
+  /** Creates a schema that only accepts `null`. */
   null: (options: CommonOptions = {}) =>
     make<null>({ type: "null", ...options }, (value, path) =>
       value === null ? ok(null) : bad([issue(path, "invalid_type", "Expected null.")]),
     ),
+  /** Creates a schema for plain objects with a fixed set of properties. */
   object,
+  /** Creates a schema for arrays, with optional length and uniqueness constraints. */
   array,
+  /** Creates a schema for objects whose values all conform to `values`, keyed by arbitrary strings. */
   record: <T>(values: Schema<T>, options: CommonOptions = {}) =>
     makeObject<Record<string, T>>(
       { type: "object", ...options, additionalProperties: values.jsonSchema },
@@ -425,6 +462,7 @@ export const schema = Object.freeze({
         return issues.length ? bad(issues) : ok(output);
       },
     ),
+  /** Creates a schema that accepts only one of the given literal `values`. */
   enum: <const T extends readonly (string | number | boolean)[]>(
     values: T,
     options: CommonOptions = {},
@@ -434,6 +472,7 @@ export const schema = Object.freeze({
         ? ok(value as T[number])
         : bad([issue(path, "invalid_enum", "Invalid enum value.")]),
     ),
+  /** Creates a schema that accepts only the exact `value`. */
   literal: <const T extends string | number | boolean | null>(
     value: T,
     options: CommonOptions = {},
@@ -441,6 +480,7 @@ export const schema = Object.freeze({
     make<T>({ ...options, const: value }, (input, path) =>
       input === value ? ok(value) : bad([issue(path, "invalid_literal", "Invalid literal value.")]),
     ),
+  /** Wraps `value` so it also accepts `undefined`; used to mark object properties as optional. */
   optional: <T>(value: Schema<T>): OptionalSchema<T> => {
     const result = Object.freeze({
       jsonSchema: value.jsonSchema,
@@ -450,10 +490,12 @@ export const schema = Object.freeze({
     optionalSchemas.add(result);
     return result;
   },
+  /** Wraps `value` so it also accepts `null`. */
   nullable: <T>(value: Schema<T>) =>
     make<T | null>({ anyOf: [value.jsonSchema, { type: "null" }] }, (input) =>
       input === null ? ok(null) : value.safeParse(input),
     ),
+  /** Creates a schema that requires exactly one of `values` to match (JSON Schema `oneOf`). */
   oneOf: <const T extends readonly Schema[]>(...values: T) =>
     make<InferSchema<T[number]>>(
       { oneOf: values.map((value) => value.jsonSchema) },
@@ -474,6 +516,7 @@ export const schema = Object.freeze({
             ]);
       },
     ),
+  /** Creates a schema that accepts a value matched by any of `values` (JSON Schema `anyOf`). */
   anyOf: <const T extends readonly Schema[]>(...values: T) =>
     make<InferSchema<T[number]>>(
       { anyOf: values.map((value) => value.jsonSchema) },
@@ -485,6 +528,11 @@ export const schema = Object.freeze({
         return bad([issue(path, "invalid_union", "No union member matched.")]);
       },
     ),
+  /**
+   * Creates a schema requiring a value to satisfy every schema in `values` (JSON Schema `allOf`),
+   * merging their parsed object results. An `unrecognized_key` issue is only reported if every
+   * member schema rejects that key.
+   */
   allOf: <const T extends readonly Schema[]>(...values: T) =>
     make<UnionToIntersection<InferSchema<T[number]>>>(
       { allOf: values.map((value) => value.jsonSchema) },
@@ -518,6 +566,10 @@ export const schema = Object.freeze({
         return ok(output as UnionToIntersection<InferSchema<T[number]>>);
       },
     ),
+  /**
+   * Creates a schema from a hand-written JSON Schema and parser, for cases the built-in
+   * builders don't cover. Only the draft 2020-12 dialect (or no `$schema`) is accepted.
+   */
   raw: <T>(
     jsonSchema: JsonSchema,
     safeParse: (value: unknown) => SafeParseResult<T>,
