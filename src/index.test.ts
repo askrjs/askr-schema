@@ -343,6 +343,16 @@ describe("schema", () => {
           { id: "one", label: 1, extra: true },
         ],
       },
+      {
+        value: schema.allOf(
+          schema.object({ profile: schema.object({ name: schema.string() }) }),
+          schema.object({ active: schema.boolean() }),
+        ),
+        inputs: [
+          { profile: { name: "Ada" }, active: true },
+          { profile: { name: "Ada", extra: "no" }, active: true },
+        ],
+      },
     ];
 
     for (const { value, inputs } of parityCases) {
