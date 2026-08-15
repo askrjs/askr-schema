@@ -302,25 +302,56 @@ describe("schema", () => {
   });
 
   it("should keep allOf runtime results aligned with its JSON Schema projection", () => {
-    const value = schema.allOf(
-      schema.object({ id: schema.string() }),
-      schema.object({ active: schema.boolean() }),
-    );
-    const validateProjection = new Ajv2020({ strict: true }).compile(value.jsonSchema);
-    const inputs = [
-      { id: "one", active: true },
-      { id: "one" },
-      { active: true },
-      { id: "one", active: "yes" },
-      { id: "one", active: true, extra: "no" },
-      null,
-      [],
+    const parityCases = [
+      {
+        value: schema.allOf(
+          schema.object({ id: schema.string() }),
+          schema.object({ active: schema.boolean() }),
+        ),
+        inputs: [
+          { id: "one", active: true },
+          { id: "one" },
+          { active: true },
+          { id: "one", active: "yes" },
+          { id: "one", active: true, extra: "no" },
+          null,
+          [],
+        ],
+      },
+      {
+        value: schema.allOf(
+          schema.object({ id: schema.string() }),
+          schema.object({ active: schema.boolean() }, { additionalProperties: true }),
+        ),
+        inputs: [
+          { id: "one", active: true },
+          { id: "one", active: true, extra: "allowed" },
+          { id: "one", active: "yes" },
+        ],
+      },
+      {
+        value: schema.allOf(
+          schema.object({ id: schema.string() }),
+          schema.object(
+            { label: schema.string() },
+            { additionalProperties: schema.boolean() },
+          ),
+        ),
+        inputs: [
+          { id: "one", label: "ready", extra: true },
+          { id: "one", label: "ready", extra: "no" },
+          { id: "one", label: 1, extra: true },
+        ],
+      },
     ];
 
-    for (const input of inputs) {
-      expect(value.safeParse(input).success, JSON.stringify(input)).toBe(
-        validateProjection(input),
-      );
+    for (const { value, inputs } of parityCases) {
+      const validateProjection = new Ajv2020({ strict: true }).compile(value.jsonSchema);
+      for (const input of inputs) {
+        expect(value.safeParse(input).success, JSON.stringify(input)).toBe(
+          validateProjection(input),
+        );
+      }
     }
   });
 });

@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import Ajv2020 from "ajv/dist/2020.js";
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const root = process.cwd();
@@ -83,6 +84,37 @@ try {
     JSON.stringify(schema.string({ examples: ["second", "first"] }).jsonSchema.examples) ===
       '["second","first"]',
     "packed schema must preserve semantically ordered examples",
+  );
+
+  const optionalOrders = [
+    schema.object({ value: schema.optional(schema.nullable(schema.string())) }),
+    schema.object({ value: schema.nullable(schema.optional(schema.string())) }),
+  ];
+  assert(
+    optionalOrders.every(
+      (value) =>
+        value.jsonSchema.required === undefined &&
+        value.safeParse({}).success &&
+        value.safeParse({ value: null }).success,
+    ),
+    "packed schema must preserve optionality through nullable wrapper order",
+  );
+
+  const intersection = schema.allOf(
+    schema.object({ id: schema.string() }),
+    schema.object({ active: schema.boolean() }),
+  );
+  const validateIntersection = new Ajv2020({ strict: true }).compile(intersection.jsonSchema);
+  const intersectionInputs = [
+    { id: "one", active: true },
+    { id: "one" },
+    { id: "one", active: true, extra: "no" },
+  ];
+  assert(
+    intersectionInputs.every(
+      (input) => intersection.safeParse(input).success === validateIntersection(input),
+    ),
+    "packed allOf runtime and JSON Schema projection must agree",
   );
 } finally {
   await fs.rm(consumer, { recursive: true, force: true });

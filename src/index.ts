@@ -38,6 +38,10 @@ export interface OptionalSchema<T> extends Schema<T | undefined> {
   readonly __optional: true;
 }
 
+type NullableSchema<T extends Schema> = T extends OptionalSchema<infer Value>
+  ? OptionalSchema<Value | null>
+  : Schema<InferSchema<T> | null>;
+
 /** Infers the parsed value type of a {@link Schema}. */
 export type InferSchema<T> = T extends Schema<infer Value> ? Value : never;
 
@@ -286,6 +290,22 @@ function canonicalProjectionArray<T>(values: readonly T[]): T[] {
   });
 }
 
+function allOfProjection(values: readonly Schema[]): Record<string, unknown> {
+  let composesStrictObjects = false;
+  const projections = values.map((value) => {
+    if (!("kind" in value) || value.kind !== "object") return value.jsonSchema;
+    if (value.jsonSchema.additionalProperties !== false) return value.jsonSchema;
+    composesStrictObjects = true;
+    const { additionalProperties: _additionalProperties, ...projection } = value.jsonSchema;
+    return projection;
+  });
+  return {
+    ...(composesStrictObjects ? { type: "object" } : {}),
+    allOf: canonicalProjectionArray(projections),
+    ...(composesStrictObjects ? { unevaluatedProperties: false } : {}),
+  };
+}
+
 function object<T extends Record<string, Schema>>(
   properties: T,
   options: ObjectOptions = {},
@@ -520,11 +540,20 @@ export const schema = Object.freeze({
     optionalSchemas.add(result);
     return result;
   },
-  /** Wraps `value` so it also accepts `null`. */
-  nullable: <T>(value: Schema<T>) =>
-    make<T | null>({ anyOf: [value.jsonSchema, { type: "null" }] }, (input) =>
-      input === null ? ok(null) : value.safeParse(input),
-    ),
+  /** Wraps `value` so it also accepts `null`, preserving nested optionality. */
+  nullable: <T extends Schema>(value: T): NullableSchema<T> => {
+    const result = make<InferSchema<T> | null>(
+      { anyOf: [value.jsonSchema, { type: "null" }] },
+      (input) =>
+        input === null
+          ? ok(null)
+          : (value.safeParse(input) as SafeParseResult<InferSchema<T>>),
+    );
+    if (!optionalSchemas.has(value)) return result as NullableSchema<T>;
+    const optionalResult = Object.freeze({ ...result, __optional: true as const });
+    optionalSchemas.add(optionalResult);
+    return optionalResult as NullableSchema<T>;
+  },
   /** Creates a schema that requires exactly one of `values` to match (JSON Schema `oneOf`). */
   oneOf: <const T extends readonly Schema[]>(...values: T) =>
     make<InferSchema<T[number]>>(
@@ -560,12 +589,14 @@ export const schema = Object.freeze({
     ),
   /**
    * Creates a schema requiring a value to satisfy every schema in `values` (JSON Schema `allOf`),
-   * merging their parsed object results. An `unrecognized_key` issue is only reported if every
-   * member schema rejects that key.
+   * merging their parsed object results. Strict object members compose their recognized keys;
+   * the projection uses `unevaluatedProperties: false` so external validators enforce the same
+   * union of recognized keys. An `unrecognized_key` issue is only reported if every member schema
+   * rejects that key.
    */
   allOf: <const T extends readonly Schema[]>(...values: T) =>
     make<UnionToIntersection<InferSchema<T[number]>>>(
-      { allOf: canonicalProjectionArray(values.map((value) => value.jsonSchema)) },
+      allOfProjection(values),
       (input) => {
         let output: unknown = input;
         const issues: Issue[] = [];
