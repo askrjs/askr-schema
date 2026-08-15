@@ -1,6 +1,6 @@
 {
   "name": "@askrjs/schema",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Executable schemas with deterministic OpenAPI projection for Askr",
   "keywords": [
     "askr",
@@ -54,6 +54,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "ajv": "^8.20.0",
     "publint": "^0.3.23",
     "typescript": "^7.0.2",
     "vite-plus": "^0.2.8",
