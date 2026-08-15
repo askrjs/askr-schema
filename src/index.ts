@@ -135,6 +135,32 @@ function makeObject<T extends Record<string, unknown>>(
   return Object.freeze({ ...value, kind: "object" as const });
 }
 
+function isCalendarDate(year: number, month: number, day: number): boolean {
+  if (month < 1 || month > 12 || day < 1) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= days[month - 1]!;
+}
+
+function isDateTime(value: string): boolean {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$/.exec(
+      value,
+    );
+  if (!match) return false;
+  const [year, month, day, hour, minute, second, offsetHour, offsetMinute] = match
+    .slice(1)
+    .map((part) => (part === undefined ? undefined : Number(part)));
+  return (
+    isCalendarDate(year!, month!, day!) &&
+    hour! <= 23 &&
+    minute! <= 59 &&
+    second! <= 60 &&
+    (offsetHour === undefined || offsetHour <= 23) &&
+    (offsetMinute === undefined || offsetMinute <= 59)
+  );
+}
+
 function stringFormat(format: string | undefined, value: string): boolean {
   if (!format || format === "binary") return true;
   if (format === "uuid") {
@@ -152,16 +178,9 @@ function stringFormat(format: string | undefined, value: string): boolean {
   if (format === "date") {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) return false;
-    const date = new Date(`${value}T00:00:00.000Z`);
-    return (
-      date.getUTCFullYear() === Number(match[1]) &&
-      date.getUTCMonth() + 1 === Number(match[2]) &&
-      date.getUTCDate() === Number(match[3])
-    );
+    return isCalendarDate(Number(match[1]), Number(match[2]), Number(match[3]));
   }
-  if (format === "date-time") {
-    return /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value));
-  }
+  if (format === "date-time") return isDateTime(value);
   if (format === "byte")
     return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
   return true;
@@ -185,10 +204,11 @@ function string(options: StringOptions = {}): Schema<string> {
   const expression = options.pattern === undefined ? undefined : new RegExp(options.pattern);
   return make({ type: "string", ...options }, (value, path) => {
     if (typeof value !== "string") return bad([issue(path, "invalid_type", "Expected string.")]);
-    if (options.minLength !== undefined && value.length < options.minLength) {
+    const length = [...value].length;
+    if (options.minLength !== undefined && length < options.minLength) {
       return bad([issue(path, "too_small", `Expected at least ${options.minLength} characters.`)]);
     }
-    if (options.maxLength !== undefined && value.length > options.maxLength) {
+    if (options.maxLength !== undefined && length > options.maxLength) {
       return bad([issue(path, "too_big", `Expected at most ${options.maxLength} characters.`)]);
     }
     if (expression && !expression.test(value)) {
