@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import { schema, type InferSchema, type Schema } from "./index";
 
 describe("schema", () => {
+  it("should reject empty enum definitions before emitting invalid JSON Schema", () => {
+    expect(() => schema.enum([])).toThrow("schema.enum requires at least one value.");
+  });
+
   it("should reject unsupported string formats at construction", () => {
     expect(() => schema.string({ format: "hostname" as "uuid" })).toThrow(
       "Unsupported string format: hostname. Use schema.raw() for custom formats.",

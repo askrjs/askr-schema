@@ -551,12 +551,14 @@ export const schema = Object.freeze({
   enum: <const T extends readonly (string | number | boolean)[]>(
     values: T,
     options: CommonOptions = {},
-  ) =>
-    make<T[number]>({ ...options, enum: canonicalProjectionArray(values) }, (value, path) =>
+  ) => {
+    if (values.length === 0) throw new TypeError("schema.enum requires at least one value.");
+    return make<T[number]>({ ...options, enum: canonicalProjectionArray(values) }, (value, path) =>
       values.includes(value as T[number])
         ? ok(value as T[number])
         : bad([issue(path, "invalid_enum", "Invalid enum value.")]),
-    ),
+    );
+  },
   /** Creates a schema that accepts only the exact `value`. */
   literal: <const T extends string | number | boolean | null>(
     value: T,
