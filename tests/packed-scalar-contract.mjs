@@ -85,6 +85,10 @@ try {
       '["second","first"]',
     "packed schema must preserve semantically ordered examples",
   );
+  assert(
+    schema.number({ multipleOf: 0.3 }).safeParse(300_000_000.3).success,
+    "packed schema must use scale-relative multipleOf precision",
+  );
 
   const optionalOrders = [
     schema.object({ value: schema.optional(schema.nullable(schema.string())) }),
@@ -131,6 +135,14 @@ try {
       return inputs.every((input) => value.safeParse(input).success === validate(input));
     }),
     "packed allOf runtime and JSON Schema projection must agree",
+  );
+  const conflictingIntersection = schema.allOf(
+    schema.raw({ type: "object" }, () => ({ success: true, data: { value: "left" } })),
+    schema.raw({ type: "object" }, () => ({ success: true, data: { value: "right" } })),
+  );
+  assert(
+    conflictingIntersection.safeParse({}).issues?.[0]?.code === "conflicting_value",
+    "packed allOf must reject conflicting parsed values",
   );
 
   const recursionGuidance =

@@ -216,6 +216,19 @@ describe("schema", () => {
     });
   });
 
+  it("should accept large decimal multiples within scale-relative precision", () => {
+    const value = schema.number({ multipleOf: 0.3 });
+
+    expect(value.safeParse(300_000_000.3)).toEqual({
+      success: true,
+      data: 300_000_000.3,
+    });
+    expect(value.safeParse(300_000_000.35)).toMatchObject({
+      success: false,
+      issues: [{ code: "not_multiple" }],
+    });
+  });
+
   it("should bound uniqueItems canonicalization and reject active-path cycles", () => {
     const anyValue = schema.raw<unknown>({}, (input) => ({ success: true, data: input }));
     const uniqueValues = schema.array(anyValue, { uniqueItems: true });
@@ -327,6 +340,41 @@ describe("schema", () => {
     expect(value.safeParse({ id: "one", active: true, extra: "no" })).toMatchObject({
       success: false,
       issues: [{ path: ["extra"], code: "unrecognized_key" }],
+    });
+  });
+
+  it("should reject conflicting parsed values from allOf members", () => {
+    const left = schema.raw<{ value: string }>({ type: "object" }, () => ({
+      success: true,
+      data: { value: "left" },
+    }));
+    const right = schema.raw<{ value: string }>({ type: "object" }, () => ({
+      success: true,
+      data: { value: "right" },
+    }));
+
+    expect(schema.allOf(left, right).safeParse({ value: "input" })).toEqual({
+      success: false,
+      issues: [
+        {
+          path: ["value"],
+          code: "conflicting_value",
+          message: 'allOf members produced conflicting values for key "value".',
+        },
+      ],
+    });
+
+    const agreeingLeft = schema.raw<{ value: { a: number; b: number } }>(
+      { type: "object" },
+      () => ({ success: true, data: { value: { a: 1, b: 2 } } }),
+    );
+    const agreeingRight = schema.raw<{ value: { a: number; b: number } }>(
+      { type: "object" },
+      () => ({ success: true, data: { value: { b: 2, a: 1 } } }),
+    );
+    expect(schema.allOf(agreeingLeft, agreeingRight).safeParse({})).toEqual({
+      success: true,
+      data: { value: { b: 2, a: 1 } },
     });
   });
 
