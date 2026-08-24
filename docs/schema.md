@@ -21,6 +21,9 @@ key, deeply equal values compose normally; differing values fail with a
 Constraints written into a built-in schema are executable. This includes
 string length, pattern and supported formats; numeric bounds and multiples;
 array size and uniqueness; and object size and additional-property schemas.
+Strict objects keep the generic `Unknown key.` issue for unrelated keys. A
+single insertion, deletion, substitution, or adjacent transposition from a
+declared key adds a deterministic `Did you mean "key"?` suggestion.
 
 `schema.raw(projection, safeParse)` supports specialized formats while keeping
 the executable-schema invariant. The callback must return a `SafeParseResult`.

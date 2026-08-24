@@ -103,6 +103,13 @@ try {
     ),
     "packed schema must preserve optionality through nullable wrapper order",
   );
+  const typoResult = schema.object({ email: schema.string() }).safeParse({ emial: "x" });
+  assert(
+    typoResult.issues?.some(
+      (entry) => entry.message === 'Unknown key. Did you mean "email"?',
+    ),
+    "packed schema must suggest a declared key for an adjacent transposition",
+  );
 
   const intersection = schema.allOf(
     schema.object({ id: schema.string() }),
