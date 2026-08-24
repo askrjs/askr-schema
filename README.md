@@ -5,7 +5,7 @@
 
 Executable, TypeScript-first schemas with deterministic OpenAPI 3.1 projection.
 The same declaration validates runtime input through `safeParse()` and exposes
-its deeply immutable documentation shape through `openapi`.
+its deeply immutable documentation shape through `jsonSchema`.
 
 ```ts
 import { schema, type InferSchema } from "@askrjs/schema";
@@ -29,7 +29,7 @@ schema subtype used by action inputs, route search, and server operation inputs.
 String formats are limited to the formats the runtime implements. Use
 `schema.raw()` when an integration intentionally owns a custom format.
 
-`schema.raw(openapi, safeParse)` is the explicit extension seam. It requires an
+`schema.raw(projection, safeParse)` is the explicit extension seam. It requires an
 executable parser so a documentation-only declaration cannot masquerade as a
 runtime schema. Named component references are created by `@askrjs/server`
 while retaining the original schema parser.
