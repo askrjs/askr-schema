@@ -67,7 +67,9 @@ describe("schema", () => {
   it("should enforce RFC 3339 calendar, time, and offset boundaries for date-time", () => {
     const dateTime = schema.dateTime();
     const valid = [
+      "1969-07-20T20:17:40Z",
       "2024-02-29T23:59:59Z",
+      "2016-12-31T23:59:60Z",
       "2025-01-01t00:00:00z",
       "2025-01-01T00:00:00.123456789Z",
       "2025-01-01T12:30:45+14:00",
@@ -97,6 +99,32 @@ describe("schema", () => {
       type: "string",
       format: "date-time",
     });
+  });
+
+  it("should enforce every string format and constraint at adversarial boundaries", () => {
+    const cases = [
+      [schema.uuid(), crypto.randomUUID(), "00000000-0000-0000-0000-000000000000"],
+      [schema.email(), "ada@example.com", "ada@localhost"],
+      [schema.uri(), "urn:isbn:9780141036144", "not a uri"],
+      [schema.date(), "2000-02-29", "1900-02-29"],
+      [schema.byte(), "YWJj", "YWJj="],
+      [schema.string({ pattern: "^a+$" }), "aaa", "aaab"],
+    ] as const;
+    for (const [value, accepted, rejected] of cases) {
+      expect(value.safeParse(accepted), accepted).toMatchObject({ success: true });
+      expect(value.safeParse(rejected), rejected).toMatchObject({
+        success: false,
+        issues: [{ code: "invalid_string" }],
+      });
+    }
+  });
+
+  it("should enforce inclusive and exclusive numeric boundaries exactly", () => {
+    const value = schema.number({ minimum: -1, maximum: 1, exclusiveMinimum: -2, exclusiveMaximum: 2 });
+    for (const accepted of [-1, 0, 1])
+      expect(value.safeParse(accepted)).toMatchObject({ success: true });
+    for (const rejected of [-2, 2, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(value.safeParse(rejected)).toMatchObject({ success: false });
   });
 
   it("should mark object and record schemas as transport-safe object schemas", () => {
@@ -232,6 +260,43 @@ describe("schema", () => {
       "second",
       "first",
     ]);
+  });
+
+  it("should keep nested combinator projections stable across order and repeated access", () => {
+    const memberA = () => schema.object({ a: schema.oneOf(schema.string(), schema.number()) });
+    const memberB = () => schema.object({ b: schema.anyOf(schema.boolean(), schema.null()) });
+    const left = schema.allOf(memberA(), memberB());
+    const right = schema.allOf(memberB(), memberA());
+    const projection = JSON.stringify(left.jsonSchema);
+
+    expect(projection).toBe(JSON.stringify(right.jsonSchema));
+    expect(JSON.stringify(left.jsonSchema)).toBe(projection);
+    expect(JSON.stringify(left.jsonSchema)).toBe(projection);
+  });
+
+  it("should isolate concurrent validation results and recursive-construction failures", async () => {
+    const value = schema.object({ name: schema.string({ minLength: 2 }) });
+    const inputs = [{ name: "Ada" }, { name: "x" }, { name: "Grace" }, {}];
+    const results = await Promise.all(inputs.map(async (input) => value.safeParse(input)));
+    expect(results.map((result) => result.success)).toEqual([true, false, true, false]);
+    expect(results[1]).not.toBe(results[3]);
+
+    const invalid = undefined as unknown as Schema;
+    const failures = await Promise.all(
+      Array.from({ length: 8 }, async () => {
+        try {
+          schema.array(invalid);
+          return "missing error";
+        } catch (error) {
+          return (error as Error).message;
+        }
+      }),
+    );
+    expect(new Set(failures)).toEqual(
+      new Set([
+        "Invalid child schema at schema.array(items). Recursive schemas are not supported by eager builders. Use schema.raw() for manual recursive validation and supply an explicit JSON Schema projection.",
+      ]),
+    );
   });
 
   it("should execute documented string number array and object constraints", () => {

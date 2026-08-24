@@ -3,7 +3,7 @@
 Every declaration has two inseparable surfaces:
 
 - `safeParse(value)` returns typed data or immutable, path-addressable issues.
-- `openapi` is a deeply frozen, deterministically ordered JSON Schema object.
+- `jsonSchema` is a deeply frozen, deterministically ordered JSON Schema object.
 
 Built-ins include strings and common formats, finite numbers and integers,
 booleans, null, strict objects, arrays, records, enums, literals, optional and
