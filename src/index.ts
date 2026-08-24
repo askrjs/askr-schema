@@ -248,9 +248,10 @@ function numeric(type: "number" | "integer", options: NumberOptions = {}): Schem
     }
     if (options.multipleOf !== undefined) {
       const quotient = value / options.multipleOf;
+      const tolerance = Number.EPSILON * Math.max(1, Math.abs(quotient)) * 16;
       if (
         !Number.isFinite(quotient) ||
-        Math.abs(quotient - Math.round(quotient)) > Number.EPSILON * 16
+        Math.abs(quotient - Math.round(quotient)) > tolerance
       ) {
         return bad([issue(path, "not_multiple", `Expected a multiple of ${options.multipleOf}.`)]);
       }
@@ -279,6 +280,15 @@ function stableValue(value: unknown, activePath: Set<object> = new Set(), depth 
       .join(",")}}`;
   } finally {
     activePath.delete(value);
+  }
+}
+
+function parsedValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  try {
+    return stableValue(left) === stableValue(right);
+  } catch {
+    return false;
   }
 }
 
@@ -635,7 +645,8 @@ export const schema = Object.freeze({
    * merging their parsed object results. Strict object members compose their recognized keys;
    * the projection uses `unevaluatedProperties: false` so external validators enforce the same
    * union of recognized keys. An `unrecognized_key` issue is only reported if every member schema
-   * rejects that key.
+   * rejects that key. Members may produce deeply equal values for the same parsed key; differing
+   * values produce a `conflicting_value` issue instead of using member order to choose a value.
    */
   allOf: <const T extends readonly Schema[]>(...values: T) => {
     const children = childSchemas(values, "allOf");
@@ -645,6 +656,8 @@ export const schema = Object.freeze({
         let output: unknown = input;
         const issues: Issue[] = [];
         const unknownCounts = new Map<string, { issue: Issue; count: number }>();
+        const parsedValues = new Map<string, unknown>();
+        const conflictingKeys = new Set<string>();
         for (const value of children) {
           const result = value.safeParse(input);
           if (!result.success) {
@@ -658,6 +671,26 @@ export const schema = Object.freeze({
               unknownCounts.set(key, { issue: entry, count: (previous?.count ?? 0) + 1 });
             }
             continue;
+          }
+          if (typeof result.data === "object" && result.data) {
+            for (const [key, parsedValue] of Object.entries(result.data)) {
+              if (
+                parsedValues.has(key) &&
+                !parsedValuesEqual(parsedValues.get(key), parsedValue) &&
+                !conflictingKeys.has(key)
+              ) {
+                conflictingKeys.add(key);
+                issues.push(
+                  issue(
+                    [key],
+                    "conflicting_value",
+                    `allOf members produced conflicting values for key ${JSON.stringify(key)}.`,
+                  ),
+                );
+              } else if (!parsedValues.has(key)) {
+                parsedValues.set(key, parsedValue);
+              }
+            }
           }
           output =
             typeof output === "object" && output && typeof result.data === "object" && result.data

@@ -14,7 +14,9 @@ optional object property that accepts `null`; modifier order does not discard
 optionality. `allOf` composes the recognized keys of strict object members and
 rejects keys recognized by none of them. Its draft 2020-12 projection uses
 `unevaluatedProperties: false` so standards-compliant validators enforce the
-same contract as `safeParse()`.
+same contract as `safeParse()`. When multiple members produce the same parsed
+key, deeply equal values compose normally; differing values fail with a
+`conflicting_value` issue at that key instead of being silently overwritten.
 
 Constraints written into a built-in schema are executable. This includes
 string length, pattern and supported formats; numeric bounds and multiples;
