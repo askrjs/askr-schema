@@ -340,6 +340,50 @@ function allOfProjection(values: readonly Schema[]): Record<string, unknown> {
   };
 }
 
+function isOneEditAway(left: string, right: string): boolean {
+  const leftCharacters = [...left];
+  const rightCharacters = [...right];
+  const lengthDifference = leftCharacters.length - rightCharacters.length;
+  if (Math.abs(lengthDifference) > 1) return false;
+
+  if (lengthDifference === 0) {
+    const mismatches: number[] = [];
+    for (let index = 0; index < leftCharacters.length; index++) {
+      if (leftCharacters[index] !== rightCharacters[index]) mismatches.push(index);
+      if (mismatches.length > 2) return false;
+    }
+    if (mismatches.length === 1) return true;
+    if (mismatches.length !== 2) return false;
+    const [first, second] = mismatches;
+    return (
+      second === first! + 1 &&
+      leftCharacters[first!] === rightCharacters[second!] &&
+      leftCharacters[second!] === rightCharacters[first!]
+    );
+  }
+
+  const shorter = lengthDifference < 0 ? leftCharacters : rightCharacters;
+  const longer = lengthDifference < 0 ? rightCharacters : leftCharacters;
+  let shorterIndex = 0;
+  let longerIndex = 0;
+  let skipped = false;
+  while (shorterIndex < shorter.length && longerIndex < longer.length) {
+    if (shorter[shorterIndex] === longer[longerIndex]) {
+      shorterIndex++;
+      longerIndex++;
+      continue;
+    }
+    if (skipped) return false;
+    skipped = true;
+    longerIndex++;
+  }
+  return true;
+}
+
+function suggestedObjectKey(key: string, declaredKeys: readonly string[]): string | undefined {
+  return declaredKeys.find((candidate) => isOneEditAway(key, candidate));
+}
+
 function object<T extends Record<string, Schema>>(
   properties: T,
   options: ObjectOptions = {},
@@ -347,6 +391,7 @@ function object<T extends Record<string, Schema>>(
   const propertyEntries = Object.entries(properties).map(
     ([key, value]) => [key, childSchema(value, `schema.object(properties.${key})`)] as const,
   );
+  const declaredKeys = propertyEntries.map(([key]) => key).sort();
   const required = propertyEntries
     .filter(([, value]) => !optionalSchemas.has(value))
     .map(([key]) => key)
@@ -430,7 +475,14 @@ function object<T extends Record<string, Schema>>(
               ),
             );
         } else {
-          issues.push(issue([...path, key], "unrecognized_key", "Unknown key."));
+          const suggestion = suggestedObjectKey(key, declaredKeys);
+          issues.push(
+            issue(
+              [...path, key],
+              "unrecognized_key",
+              suggestion ? `Unknown key. Did you mean ${JSON.stringify(suggestion)}?` : "Unknown key.",
+            ),
+          );
         }
       }
       return issues.length ? bad(issues) : ok(output as ObjectValue<T>);

@@ -151,6 +151,41 @@ describe("schema", () => {
     });
   });
 
+  it("should suggest a declared object key for a one-edit typo", () => {
+    const value = schema.object({ email: schema.string(), name: schema.string() });
+
+    for (const typo of ["emial", "emal", "eemail", "xmail"]) {
+      const result = value.safeParse({ [typo]: "person@example.com", name: "Ada" });
+      expect(result).toMatchObject({ success: false });
+      if (result.success) continue;
+      expect(result.issues.find((entry) => entry.code === "unrecognized_key")).toEqual({
+        path: [typo],
+        code: "unrecognized_key",
+        message: 'Unknown key. Did you mean "email"?',
+      });
+    }
+    expect(value.safeParse({ unrelated: true, email: "person@example.com", name: "Ada" }))
+      .toMatchObject({
+        success: false,
+        issues: [
+          {
+            path: ["unrelated"],
+            code: "unrecognized_key",
+            message: "Unknown key.",
+          },
+        ],
+      });
+
+    const ambiguous = schema.object({ cat: schema.string(), bat: schema.string() });
+    const ambiguousResult = ambiguous.safeParse({ hat: "value" });
+    expect(ambiguousResult).toMatchObject({ success: false });
+    if (!ambiguousResult.success) {
+      expect(
+        ambiguousResult.issues.find((entry) => entry.code === "unrecognized_key")?.message,
+      ).toBe('Unknown key. Did you mean "bat"?');
+    }
+  });
+
   it("should keep deterministic JSON Schema 2020-12 projections deeply immutable", () => {
     const examples = [{ z: 1, a: ["one"] }];
     const value = schema.object({
