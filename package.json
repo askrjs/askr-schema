@@ -1,6 +1,6 @@
 {
   "name": "@askrjs/schema",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Executable schemas with deterministic OpenAPI projection for Askr",
   "keywords": [
     "askr",
