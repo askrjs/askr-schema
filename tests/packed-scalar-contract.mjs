@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
+import { readPackRecord } from "./pack-record.mjs";
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const root = process.cwd();
@@ -15,13 +16,18 @@ function assert(condition, message) {
 }
 
 try {
-  const packed = JSON.parse(
+  const packed = readPackRecord(JSON.parse(
     execFileSync(npm, ["pack", "--ignore-scripts", "--json"], {
       cwd: root,
       encoding: "utf8",
     }),
+  ));
+  assert(
+    readPackRecord([{ filename: "array.tgz" }]).filename === "array.tgz" &&
+      readPackRecord({ "@askrjs/schema": { filename: "object.tgz" } }).filename === "object.tgz",
+    "npm pack JSON normalization must accept array and name-keyed object results",
   );
-  tarball = path.join(root, packed[0].filename);
+  tarball = path.join(root, packed.filename);
   await fs.writeFile(
     path.join(consumer, "package.json"),
     `${JSON.stringify({ name: "schema-packed-consumer", private: true, type: "module" })}\n`,
