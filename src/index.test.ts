@@ -103,7 +103,7 @@ describe("schema", () => {
 
   it("should enforce every string format and constraint at adversarial boundaries", () => {
     const cases = [
-      [schema.uuid(), crypto.randomUUID(), "00000000-0000-0000-0000-000000000000"],
+      [schema.uuid(), crypto.randomUUID(), "00000000-0000-0000-0000-000000000001"],
       [schema.email(), "ada@example.com", "ada@localhost"],
       [schema.uri(), "urn:isbn:9780141036144", "not a uri"],
       [schema.date(), "2000-02-29", "1900-02-29"],
@@ -117,6 +117,13 @@ describe("schema", () => {
         issues: [{ code: "invalid_string" }],
       });
     }
+  });
+
+  it.each([
+    "00000000-0000-0000-0000-000000000000",
+    "ffffffff-ffff-ffff-ffff-ffffffffffff",
+  ])("should accept the RFC UUID sentinel %s", (value) => {
+    expect(schema.uuid().safeParse(value)).toMatchObject({ success: true });
   });
 
   it("should enforce inclusive and exclusive numeric boundaries exactly", () => {
