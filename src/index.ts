@@ -168,6 +168,11 @@ function isDateTime(value: string): boolean {
 function stringFormat(format: string | undefined, value: string): boolean {
   if (!format || format === "binary") return true;
   if (format === "uuid") {
+    if (
+      value === "00000000-0000-0000-0000-000000000000" ||
+      /^ffffffff-ffff-ffff-ffff-ffffffffffff$/i.test(value)
+    )
+      return true;
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
   if (format === "email") return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
