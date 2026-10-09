@@ -26,7 +26,8 @@ single insertion, deletion, substitution, or adjacent transposition from a
 declared key adds a deterministic `Did you mean "key"?` suggestion.
 
 `schema.raw(projection, safeParse)` supports specialized formats while keeping
-the executable-schema invariant. The callback must return a `SafeParseResult`.
+the executable-schema invariant. The callback returns `{ success: true, data }` or `{ success: false, issues }`;
+its type is `ReturnType<Schema<T>["safeParse"]>`.
 There is intentionally no projection-only reference declaration.
 
 Recursive declarations are not supported by the eager `object()`, `array()`,

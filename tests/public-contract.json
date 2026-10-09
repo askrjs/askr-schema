@@ -1,0 +1,22 @@
+{
+  "rootValues": ["schema"],
+  "rootTypes": ["InferSchema", "Issue", "JsonSchema", "ObjectSchema", "OptionalSchema", "Schema"],
+  "removed": [
+    "ArrayOptions",
+    "CommonOptions",
+    "NullableSchema",
+    "NumberOptions",
+    "ObjectOptions",
+    "ObjectValue",
+    "OptionalKeys",
+    "SafeParseResult",
+    "StringFormat",
+    "StringOptions",
+    "UnionToIntersection",
+    "array",
+    "object",
+    "string"
+  ],
+  "privateSubpaths": ["schema", "index", "dist/index.js", "dist/schema.js", "src/index.ts"],
+  "exportKeys": [".", "./package.json"]
+}

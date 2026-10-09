@@ -12,6 +12,7 @@ describe("public surface", () => {
     const root = resolve(import.meta.dirname, "..");
     const source = [
       readFileSync(resolve(root, "src/index.ts"), "utf8"),
+      readFileSync(resolve(root, "src/schema.ts"), "utf8"),
       readFileSync(resolve(root, "README.md"), "utf8"),
       readFileSync(resolve(root, "docs/schema.md"), "utf8"),
     ].join("\n");

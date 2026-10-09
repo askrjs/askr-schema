@@ -4,10 +4,16 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
+import ts from "@typescript/typescript6";
 import { readPackRecord } from "./pack-record.mjs";
 
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const npmCli = process.env.npm_execpath;
+if (!npmCli) throw new Error("Run packed checks through npm run test:packed.");
+const runNpm = (args, options) => execFileSync(process.execPath, [npmCli, ...args], options);
 const root = process.cwd();
+const contract = JSON.parse(
+  await fs.readFile(path.join(root, "tests/public-contract.json"), "utf8"),
+);
 const consumer = await fs.mkdtemp(path.join(os.tmpdir(), "askr-schema-packed-"));
 let tarball;
 
@@ -16,28 +22,135 @@ function assert(condition, message) {
 }
 
 try {
-  const packed = readPackRecord(JSON.parse(
-    execFileSync(npm, ["pack", "--ignore-scripts", "--json"], {
-      cwd: root,
-      encoding: "utf8",
-    }),
-  ));
+  const packed = readPackRecord(
+    JSON.parse(
+      runNpm(["pack", "--ignore-scripts", "--json", "--pack-destination", consumer], {
+        cwd: root,
+        encoding: "utf8",
+      }),
+    ),
+  );
   assert(
     readPackRecord([{ filename: "array.tgz" }]).filename === "array.tgz" &&
       readPackRecord({ "@askrjs/schema": { filename: "object.tgz" } }).filename === "object.tgz",
     "npm pack JSON normalization must accept array and name-keyed object results",
   );
-  tarball = path.join(root, packed.filename);
+  tarball = path.join(consumer, packed.filename);
   await fs.writeFile(
     path.join(consumer, "package.json"),
     `${JSON.stringify({ name: "schema-packed-consumer", private: true, type: "module" })}\n`,
   );
-  execFileSync(npm, ["install", "--ignore-scripts", "--no-package-lock", "--no-save", tarball], {
+  runNpm(
+    [
+      "install",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund",
+      "--no-package-lock",
+      "--no-save",
+      tarball,
+    ],
+    {
+      cwd: consumer,
+      stdio: "pipe",
+    },
+  );
+  const entry = path.join(consumer, "node_modules", "@askrjs", "schema", "dist", "index.js");
+  const { schema } = await import(pathToFileURL(entry).href);
+
+  const manifest = JSON.parse(
+    await fs.readFile(path.join(consumer, "node_modules/@askrjs/schema/package.json"), "utf8"),
+  );
+  assert(
+    JSON.stringify(Object.keys(manifest.exports).sort()) === JSON.stringify(contract.exportKeys),
+    "packed export map drifted",
+  );
+  await fs.writeFile(
+    path.join(consumer, "surface.mjs"),
+    `
+    import assert from 'node:assert/strict';
+    import * as root from '@askrjs/schema';
+    assert.deepEqual(Object.keys(root), ${JSON.stringify(contract.rootValues)});
+    for (const path of ${JSON.stringify(contract.privateSubpaths)})
+      await assert.rejects(import('@askrjs/schema/' + path), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
+  `,
+  );
+  execFileSync(process.execPath, [path.join(consumer, "surface.mjs")], {
     cwd: consumer,
     stdio: "pipe",
   });
-  const entry = path.join(consumer, "node_modules", "@askrjs", "schema", "dist", "index.js");
-  const { schema } = await import(pathToFileURL(entry).href);
+
+  const fixture = path.join(consumer, "fixture.ts");
+  await fs.writeFile(
+    fixture,
+    `
+    import { schema, type Schema, type InferSchema, type Issue, type JsonSchema, type ObjectSchema, type OptionalSchema } from '@askrjs/schema';
+    const user = schema.object({ id: schema.uuid(), nickname: schema.optional(schema.string()) });
+    const object: ObjectSchema<InferSchema<typeof user>> = user;
+    const projection: JsonSchema = object.jsonSchema;
+    const optional: OptionalSchema<string> = schema.optional(schema.string());
+    const issue: Issue = { path: ['id'], code: 'invalid_type', message: 'Expected string.' };
+    const valid: InferSchema<typeof user> = { id: 'id' };
+    // @ts-expect-error required endpoint values remain required
+    const missing: InferSchema<typeof user> = {};
+    schema.raw<number>(projection, (value): ReturnType<Schema<number>['safeParse']> =>
+      typeof value === 'number' ? { success: true, data: value } : { success: false, issues: [issue] });
+    void [optional, valid, missing];
+    ${contract.removed.map((name) => `// @ts-expect-error removed public name\nimport type { ${name} as Removed_${name} } from '@askrjs/schema';`).join("\n")}
+  `,
+  );
+  await fs.writeFile(
+    path.join(consumer, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        strict: true,
+        noEmit: true,
+        target: "ES2022",
+        module: "NodeNext",
+        moduleResolution: "NodeNext",
+        types: [],
+      },
+      files: ["fixture.ts"],
+    }),
+  );
+  execFileSync(
+    process.execPath,
+    [path.join(root, "node_modules/typescript/bin/tsc"), "--project", "tsconfig.json"],
+    { cwd: consumer, stdio: "pipe" },
+  );
+  const program = ts.createProgram([fixture], {
+    strict: true,
+    noEmit: true,
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    types: [],
+  });
+  const diagnostics = ts.getPreEmitDiagnostics(program);
+  assert(
+    diagnostics.length === 0,
+    ts.formatDiagnosticsWithColorAndContext(diagnostics, {
+      getCanonicalFileName: (value) => value,
+      getCurrentDirectory: () => consumer,
+      getNewLine: () => "\n",
+    }),
+  );
+  const checker = program.getTypeChecker();
+  const declaration = program
+    .getSourceFile(fixture)
+    .statements.find(
+      (statement) =>
+        ts.isImportDeclaration(statement) && statement.moduleSpecifier.text === "@askrjs/schema",
+    );
+  const exports = checker
+    .getExportsOfModule(checker.getSymbolAtLocation(declaration.moduleSpecifier))
+    .map((symbol) => symbol.name)
+    .sort();
+  assert(
+    JSON.stringify(exports) ===
+      JSON.stringify([...contract.rootValues, ...contract.rootTypes].sort()),
+    `packed declaration exports drifted: ${exports.join(", ")}`,
+  );
 
   const length = schema.string({ minLength: 2, maxLength: 2 });
   assert(
@@ -111,9 +224,7 @@ try {
   );
   const typoResult = schema.object({ email: schema.string() }).safeParse({ emial: "x" });
   assert(
-    typoResult.issues?.some(
-      (entry) => entry.message === 'Unknown key. Did you mean "email"?',
-    ),
+    typoResult.issues?.some((entry) => entry.message === 'Unknown key. Did you mean "email"?'),
     "packed schema must suggest a declared key for an adjacent transposition",
   );
 
@@ -128,11 +239,7 @@ try {
   const intersectionContracts = [
     [
       intersection,
-      [
-        { id: "one", active: true },
-        { id: "one" },
-        { id: "one", active: true, extra: "no" },
-      ],
+      [{ id: "one", active: true }, { id: "one" }, { id: "one", active: true, extra: "no" }],
     ],
     [
       nestedIntersection,
