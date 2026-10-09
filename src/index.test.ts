@@ -119,15 +119,20 @@ describe("schema", () => {
     }
   });
 
-  it.each([
-    "00000000-0000-0000-0000-000000000000",
-    "ffffffff-ffff-ffff-ffff-ffffffffffff",
-  ])("should accept the RFC UUID sentinel %s", (value) => {
-    expect(schema.uuid().safeParse(value)).toMatchObject({ success: true });
-  });
+  it.each(["00000000-0000-0000-0000-000000000000", "ffffffff-ffff-ffff-ffff-ffffffffffff"])(
+    "should accept the RFC UUID sentinel %s",
+    (value) => {
+      expect(schema.uuid().safeParse(value)).toMatchObject({ success: true });
+    },
+  );
 
   it("should enforce inclusive and exclusive numeric boundaries exactly", () => {
-    const value = schema.number({ minimum: -1, maximum: 1, exclusiveMinimum: -2, exclusiveMaximum: 2 });
+    const value = schema.number({
+      minimum: -1,
+      maximum: 1,
+      exclusiveMinimum: -2,
+      exclusiveMaximum: 2,
+    });
     for (const accepted of [-1, 0, 1])
       expect(value.safeParse(accepted)).toMatchObject({ success: true });
     for (const rejected of [-2, 2, Number.NaN, Number.POSITIVE_INFINITY])
@@ -199,17 +204,18 @@ describe("schema", () => {
         message: 'Unknown key. Did you mean "email"?',
       });
     }
-    expect(value.safeParse({ unrelated: true, email: "person@example.com", name: "Ada" }))
-      .toMatchObject({
-        success: false,
-        issues: [
-          {
-            path: ["unrelated"],
-            code: "unrecognized_key",
-            message: "Unknown key.",
-          },
-        ],
-      });
+    expect(
+      value.safeParse({ unrelated: true, email: "person@example.com", name: "Ada" }),
+    ).toMatchObject({
+      success: false,
+      issues: [
+        {
+          path: ["unrelated"],
+          code: "unrecognized_key",
+          message: "Unknown key.",
+        },
+      ],
+    });
 
     const ambiguous = schema.object({ cat: schema.string(), bat: schema.string() });
     const ambiguousResult = ambiguous.safeParse({ hat: "value" });
@@ -516,10 +522,7 @@ describe("schema", () => {
       {
         value: schema.allOf(
           schema.object({ id: schema.string() }),
-          schema.object(
-            { label: schema.string() },
-            { additionalProperties: schema.boolean() },
-          ),
+          schema.object({ label: schema.string() }, { additionalProperties: schema.boolean() }),
         ),
         inputs: [
           { id: "one", label: "ready", extra: true },

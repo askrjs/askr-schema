@@ -37,6 +37,19 @@ while retaining the original schema parser.
 See [docs/schema.md](docs/schema.md) for the complete built-in vocabulary and
 projection guarantees.
 
+Constructor options, enum members and object declarations are snapshotted.
+Counts must be non-negative integers, numeric limits finite, and `multipleOf`
+positive. Empty combinators, duplicate enums and non-finite literals are
+rejected during construction. Projections must be acyclic and no deeper than
+256 nested containers; use JSON Schema `$ref` with `raw()` for manual recursion.
+Declared maximum sizes reject oversized inputs before visiting their children.
+
+## 0.5.0 preparation
+
+See the [complete API decisions and migration](docs/0.5.0-api.md) and
+[executed boundary evidence](docs/0.5.0-hardening.md). The manifest remains on
+0.4.x until coordinated release qualification.
+
 ## Development
 
 ```sh
@@ -45,5 +58,5 @@ npm run check
 npm run pack:check
 ```
 
-The package uses Vite Plus and publishes only ESM JavaScript and declarations
-from `dist/`.
+The package uses Vite Plus and publishes ESM JavaScript and declarations from
+`dist/`, plus its changelog and contract/migration documentation.
