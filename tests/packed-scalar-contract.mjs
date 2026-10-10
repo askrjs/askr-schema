@@ -40,21 +40,10 @@ try {
     path.join(consumer, "package.json"),
     `${JSON.stringify({ name: "schema-packed-consumer", private: true, type: "module" })}\n`,
   );
-  runNpm(
-    [
-      "install",
-      "--ignore-scripts",
-      "--no-audit",
-      "--no-fund",
-      "--no-package-lock",
-      "--no-save",
-      tarball,
-    ],
-    {
-      cwd: consumer,
-      stdio: "pipe",
-    },
-  );
+  runNpm(["install", "--no-audit", "--no-fund", "--no-package-lock", "--no-save", tarball], {
+    cwd: consumer,
+    stdio: "pipe",
+  });
   const entry = path.join(consumer, "node_modules", "@askrjs", "schema", "dist", "index.js");
   const { schema } = await import(pathToFileURL(entry).href);
 

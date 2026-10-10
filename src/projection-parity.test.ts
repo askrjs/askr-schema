@@ -1,5 +1,5 @@
 import Ajv2020 from "ajv/dist/2020.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 import { schema, type Schema } from "./index";
 
 const contracts: { name: string; value: Schema; inputs: unknown[] }[] = [
