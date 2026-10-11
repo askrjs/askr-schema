@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-10-10
+
 ### Breaking changes
 
 - Prepare a seven-name root API for 0.5.0, reduced from 21 reachable declaration
@@ -29,6 +31,11 @@
 - Invoke the packed test's npm CLI through Node so it executes on Windows.
 - Update compatible development tooling to clear worker/formatter/source-map
   dependency advisories.
+
+### Development
+
+- First-party development workflows use Vite+; specialized compiler, runtime,
+  browser, and package checks remain part of validation.
 
 ## 0.4.1 - 2026-09-30
 

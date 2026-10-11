@@ -1,5 +1,5 @@
 import Ajv2020 from "ajv/dist/2020.js";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { schema, type Schema } from "./index";
 
 describe("construction and resource boundaries", () => {
