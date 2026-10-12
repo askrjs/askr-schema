@@ -20,6 +20,11 @@
 
 ### Fixed
 
+- Preserve array shape and opaque raw-parser objects in `allOf` results while
+  continuing to merge plain object intersections.
+- Check `multipleOf` using exact canonical decimal divisibility so large integer
+  nonmultiples and quotient underflow cannot pass validation; retain large
+  decimal multiples and handle quotient overflow without rejecting valid values.
 - Snapshot constructor options, enum members and object declarations so later
   caller mutation cannot change parsing while leaving its projection frozen.
 - Validate sparse array slots explicitly and prevent inherited entries from
