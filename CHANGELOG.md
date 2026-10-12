@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-10-12
+
 ### Breaking changes
 
 - Prepare a seven-name root API for 0.5.0, reduced from 21 reachable declaration
