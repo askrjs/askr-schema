@@ -206,7 +206,25 @@ try {
   );
   assert(
     schema.number({ multipleOf: 0.3 }).safeParse(300_000_000.3).success,
-    "packed schema must use scale-relative multipleOf precision",
+    "packed schema must accept large canonical decimal multiples",
+  );
+  for (const input of [1_000_000_000_000_001, -1_000_000_000_000_001]) {
+    assert(
+      !schema.number({ multipleOf: 10 }).safeParse(input).success,
+      "packed schema must reject large exact integer nonmultiples",
+    );
+  }
+  const arrayIntersection = schema.allOf(
+    schema.array(schema.number()),
+    schema.array(schema.number()),
+  );
+  const arrayResult = arrayIntersection.safeParse([1, 2]);
+  assert(
+    arrayResult.success &&
+      Array.isArray(arrayResult.data) &&
+      JSON.stringify(arrayResult.data) === "[1,2]" &&
+      new Ajv2020({ strict: true }).compile(arrayIntersection.jsonSchema)(arrayResult.data),
+    "packed allOf must preserve array data matching its projection",
   );
 
   const optionalOrders = [

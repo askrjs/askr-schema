@@ -279,6 +279,25 @@ function string(options: StringOptions = {}): Schema<string> {
   });
 }
 
+function decimalParts(value: number): { coefficient: bigint; exponent: number } {
+  const [significand, exponent = "0"] = Math.abs(value).toString().split("e");
+  const [whole, fraction = ""] = significand!.split(".");
+  return {
+    coefficient: BigInt(`${whole}${fraction}`),
+    exponent: Number(exponent) - fraction.length,
+  };
+}
+
+function isMultipleOf(value: number, divisor: number): boolean {
+  // Compare canonical JSON decimals without rounded, overflowing or underflowing quotients.
+  const left = decimalParts(value);
+  const right = decimalParts(divisor);
+  const exponent = left.exponent - right.exponent;
+  return exponent >= 0
+    ? (left.coefficient * 10n ** BigInt(exponent)) % right.coefficient === 0n
+    : left.coefficient % (right.coefficient * 10n ** BigInt(-exponent)) === 0n;
+}
+
 function numeric(type: "number" | "integer", options: NumberOptions = {}): Schema<number> {
   options = { ...options };
   finiteConstraints(
@@ -311,12 +330,8 @@ function numeric(type: "number" | "integer", options: NumberOptions = {}): Schem
     if (options.exclusiveMaximum !== undefined && value >= options.exclusiveMaximum) {
       return bad([issue(path, "too_big", `Expected less than ${options.exclusiveMaximum}.`)]);
     }
-    if (options.multipleOf !== undefined) {
-      const quotient = value / options.multipleOf;
-      const tolerance = Number.EPSILON * Math.max(1, Math.abs(quotient)) * 16;
-      if (!Number.isFinite(quotient) || Math.abs(quotient - Math.round(quotient)) > tolerance) {
-        return bad([issue(path, "not_multiple", `Expected a multiple of ${options.multipleOf}.`)]);
-      }
+    if (options.multipleOf !== undefined && !isMultipleOf(value, options.multipleOf)) {
+      return bad([issue(path, "not_multiple", `Expected a multiple of ${options.multipleOf}.`)]);
     }
     return ok(value);
   });
@@ -352,6 +367,12 @@ function parsedValuesEqual(left: unknown, right: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object") return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function canonicalProjectionArray<T>(values: readonly T[]): T[] {
@@ -819,8 +840,8 @@ export const schema = Object.freeze({
           }
         }
         output =
-          typeof output === "object" && output && typeof result.data === "object" && result.data
-            ? { ...(output as object), ...(result.data as object) }
+          isPlainRecord(output) && isPlainRecord(result.data)
+            ? { ...output, ...result.data }
             : result.data;
       }
       for (const entry of unknownCounts.values()) {

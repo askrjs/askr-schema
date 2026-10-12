@@ -329,7 +329,7 @@ describe("schema", () => {
     });
   });
 
-  it("should accept large decimal multiples within scale-relative precision", () => {
+  it("should accept large canonical decimal multiples", () => {
     const value = schema.number({ multipleOf: 0.3 });
 
     expect(value.safeParse(300_000_000.3)).toEqual({
