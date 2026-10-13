@@ -55,3 +55,16 @@ jobs:
         run: |
           npm run typecheck --if-present
           npm run test:types --if-present
+
+      - name: Verify packed API and runtime contracts
+        run: npm run test:packed
+
+      - name: Measure implementation coverage
+        run: npm run test:coverage
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: schema-coverage-${{ matrix.os }}
+          path: coverage/

@@ -17,16 +17,26 @@ rejects keys recognized by none of them. Its draft 2020-12 projection uses
 same contract as `safeParse()`. When multiple members produce the same parsed
 key, deeply equal values compose normally; differing values fail with a
 `conflicting_value` issue at that key instead of being silently overwritten.
+Only plain object results are merged. Array intersections retain arrays, and
+opaque objects returned by a `raw()` parser retain their identity.
 
 Constraints written into a built-in schema are executable. This includes
 string length, pattern and supported formats; numeric bounds and multiples;
 array size and uniqueness; and object size and additional-property schemas.
+`multipleOf` compares the canonical decimal representations of the finite input
+and divisor exactly, including exponent notation. For example, `300000000.3`
+is a multiple of `0.3`, but `1000000000000001` is not a multiple of `10`.
+Approximate computed values such as `0.1 + 0.2` (`0.30000000000000004`) are not
+silently rounded to a multiple of `0.1`; applications must round them explicitly
+when that is their intended policy.
+
 Strict objects keep the generic `Unknown key.` issue for unrelated keys. A
 single insertion, deletion, substitution, or adjacent transposition from a
 declared key adds a deterministic `Did you mean "key"?` suggestion.
 
 `schema.raw(projection, safeParse)` supports specialized formats while keeping
-the executable-schema invariant. The callback must return a `SafeParseResult`.
+the executable-schema invariant. The callback returns `{ success: true, data }` or `{ success: false, issues }`;
+its type is `ReturnType<Schema<T>["safeParse"]>`.
 There is intentionally no projection-only reference declaration.
 
 Recursive declarations are not supported by the eager `object()`, `array()`,
