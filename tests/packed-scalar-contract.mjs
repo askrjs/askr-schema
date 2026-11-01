@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
-import ts from "@typescript/typescript6";
+import ts from "typescript";
 import { readPackRecord } from "./pack-record.mjs";
 
 const npmCli = process.env.npm_execpath;
@@ -115,7 +115,7 @@ try {
   );
   execFileSync(
     process.execPath,
-    [path.join(root, "node_modules/typescript/bin/tsc"), "--project", "tsconfig.json"],
+    [path.join(root, "node_modules/@typescript/native/bin/tsc"), "--project", "tsconfig.json"],
     { cwd: consumer, stdio: "pipe" },
   );
   const program = ts.createProgram([fixture], {
