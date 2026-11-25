@@ -81,4 +81,54 @@ describe("complete schema builder projection parity", () => {
     for (const input of inputs)
       expect(value.safeParse(input).success, JSON.stringify(input)).toBe(validate(input));
   });
+
+  it.each([
+    ["uuid", schema.uuid(), "3d813cbb-47fb-4d3c-a584-5e0d2f0e890a", "not-a-uuid"],
+    ["email", schema.email(), "ada@example.test", "ada@localhost"],
+    ["uri", schema.uri(), "https://example.test/path", "not a uri"],
+    ["date", schema.date(), "2024-02-29", "2023-02-29"],
+    ["date-time", schema.dateTime(), "2024-02-29T12:30:00Z", "2024-02-30T25:61:00Z"],
+  ] as const)("should agree on supported %s format values", (format, value, valid, invalid) => {
+    const validate = new Ajv2020({ strict: false })
+      .addFormat(format, {
+        type: "string",
+        validate: (input: string) => {
+          switch (format) {
+            case "uuid":
+              return /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i.test(
+                input,
+              );
+            case "email":
+              return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
+            case "uri":
+              try {
+                return Boolean(new URL(input).protocol);
+              } catch {
+                return false;
+              }
+            case "date": {
+              const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);
+              if (!match) return false;
+              const year = Number(match[1]);
+              const month = Number(match[2]);
+              const day = Number(match[3]);
+              return (
+                month >= 1 && month <= 12 && day >= 1 && day <= new Date(year, month, 0).getDate()
+              );
+            }
+            case "date-time":
+              return (
+                /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(
+                  input,
+                ) && Number.isFinite(Date.parse(input))
+              );
+          }
+        },
+      })
+      .compile(value.jsonSchema);
+    expect(value.safeParse(valid).success).toBe(true);
+    expect(validate(valid)).toBe(true);
+    expect(value.safeParse(invalid).success).toBe(false);
+    expect(validate(invalid)).toBe(false);
+  });
 });
