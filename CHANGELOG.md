@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.5.1 - 2026-11-28
+
+### Tests
+
+- Check parity between supported format validators and their schema projections.
+
 ## 0.5.0 - 2026-10-12
 
 ### Breaking changes
